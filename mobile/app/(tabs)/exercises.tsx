@@ -19,9 +19,9 @@ type Exercise = {
 };
 
 type DaySection = {
-  dayLetter: string;
-  date: string; // e.g. "Mar 17"
-  event?: string; // optional holiday / event label
+  dayAbbr: string;  // e.g. "Tue"
+  dayNum: string;   // e.g. "21"
+  month: string;    // e.g. "Mar"
   exercises: Exercise[];
 };
 
@@ -29,9 +29,9 @@ type DaySection = {
 
 const SECTIONS: DaySection[] = [
   {
-    dayLetter: 'T',
-    date: 'Mar 17',
-    event: "St. Patrick's Day",
+    dayAbbr: 'Tue',
+    dayNum: '17',
+    month: 'Mar',
     exercises: [
       { id: '1', name: 'Quad Sets', accentColor: '#e74c3c' },
       { id: '2', name: 'Heel Slides', accentColor: '#2ecc71' },
@@ -40,24 +40,27 @@ const SECTIONS: DaySection[] = [
     ],
   },
   {
-    dayLetter: 'W',
-    date: 'Mar 18',
+    dayAbbr: 'Wed',
+    dayNum: '18',
+    month: 'Mar',
     exercises: [
       { id: '5', name: 'Straight Leg Raises', accentColor: '#e74c3c' },
       { id: '6', name: 'Step-Ups', accentColor: '#9b59b6' },
     ],
   },
   {
-    dayLetter: 'T',
-    date: 'Mar 19',
+    dayAbbr: 'Thu',
+    dayNum: '19',
+    month: 'Mar',
     exercises: [
       { id: '7', name: 'Hip Abduction', accentColor: '#2ecc71' },
       { id: '8', name: 'Calf Raises', accentColor: '#f39c12' },
     ],
   },
   {
-    dayLetter: 'F',
-    date: 'Mar 20',
+    dayAbbr: 'Fri',
+    dayNum: '20',
+    month: 'Mar',
     exercises: [
       { id: '9', name: 'Balance Board', accentColor: '#e74c3c' },
       { id: '10', name: 'pwc event', accentColor: '#9b59b6' },
@@ -72,15 +75,19 @@ export default function ExercisesScreen() {
   const [videoModal, setVideoModal] = useState(false);
   const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
 
-  function handleExercisePress(ex: Exercise) {
+  function handleExercisePress(ex: Exercise, isRehab: boolean | undefined) {
     setSelectedExercise(ex);
-    setCameraModal(true);
+    if (isRehab) {
+      setCameraModal(true);
+    } else {
+      setVideoModal(true);
+    }
   }
 
-  function handleCameraNext() {
-    setCameraModal(false);
-    setVideoModal(true);
-  }
+  // function handleCameraNext() {
+  //   setCameraModal(false);
+  //   setVideoModal(true);
+  // }
 
   function handleClose() {
     setCameraModal(false);
@@ -96,13 +103,6 @@ export default function ExercisesScreen() {
       <ScrollView contentContainerStyle={styles.list}>
         {SECTIONS.map((section, si) => (
           <View key={si} style={styles.section}>
-            {/* Event banner */}
-            {section.event && (
-              <View style={styles.eventBanner}>
-                <Text style={styles.eventBannerText}>{section.event}</Text>
-              </View>
-            )}
-
             {/* Day rows */}
             {section.exercises.map((ex, ei) => (
               <View key={ex.id} style={styles.row}>
@@ -110,7 +110,9 @@ export default function ExercisesScreen() {
                 <View style={styles.dayBubbleCol}>
                   {ei === 0 ? (
                     <View style={styles.dayBubble}>
-                      <Text style={styles.dayLetter}>{section.dayLetter}</Text>
+                      <Text style={styles.dayAbbr}>{section.dayAbbr}</Text>
+                      <Text style={styles.dayNum}>{section.dayNum}</Text>
+                      <Text style={styles.dayMonth}>{section.month}</Text>
                     </View>
                   ) : (
                     <View style={styles.dayBubbleSpacer} />
@@ -120,7 +122,7 @@ export default function ExercisesScreen() {
                 {/* Exercise card */}
                 <TouchableOpacity
                   style={[styles.exerciseCard, ex.isRehab && styles.rehabCard]}
-                  onPress={() => handleExercisePress(ex)}
+                  onPress={() => handleExercisePress(ex, ex.isRehab)}
                   activeOpacity={0.75}
                 >
                   <View style={[styles.accentBar, { backgroundColor: ex.accentColor }]} />
@@ -134,11 +136,6 @@ export default function ExercisesScreen() {
         ))}
       </ScrollView>
 
-      {/* FAB */}
-      <TouchableOpacity style={styles.fab} activeOpacity={0.85}>
-        <Text style={styles.fabIcon}>+</Text>
-      </TouchableOpacity>
-
       {/* Camera modal */}
       <Modal visible={cameraModal} animationType="slide" onRequestClose={handleClose}>
         <View style={styles.cameraScreen}>
@@ -146,7 +143,7 @@ export default function ExercisesScreen() {
           <View style={styles.cameraPreview}>
             <Text style={styles.cameraHint}>open camera{'\n'}use visuals like apple face id setup</Text>
           </View>
-          <TouchableOpacity style={styles.nextButton} onPress={handleCameraNext}>
+          <TouchableOpacity style={styles.nextButton} onPress={handleClose}> {/*<<< THIS IS TEMP RIGHT HERE <<<*/}
             <Text style={styles.nextButtonText}>Next →</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
@@ -183,36 +180,27 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 8,
   },
-  list: { paddingHorizontal: 16, paddingBottom: 100 },
+  list: { paddingHorizontal: 16, paddingBottom: 32 },
 
   section: { marginBottom: 4 },
 
-  eventBanner: {
-    backgroundColor: '#2a9d7c',
-    borderRadius: 6,
-    paddingVertical: 5,
-    paddingHorizontal: 12,
-    marginLeft: 44,
-    marginBottom: 4,
-    marginTop: 8,
-  },
-  eventBannerText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+  row: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6 },
 
-  row: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-
-  dayBubbleCol: { width: 36, alignItems: 'center', marginRight: 8 },
+  dayBubbleCol: { width: 52, alignItems: 'center', marginRight: 10 },
   dayBubble: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 50,
+    paddingVertical: 6,
+    borderRadius: 14,
     borderWidth: 1.5,
     borderColor: '#C5CDD3',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#fff',
   },
-  dayBubbleSpacer: { width: 32, height: 32 },
-  dayLetter: { fontSize: 14, fontWeight: '600', color: '#11181C' },
+  dayBubbleSpacer: { width: 50 },
+  dayAbbr: { fontSize: 11, fontWeight: '600', color: '#687076', letterSpacing: 0.3 },
+  dayNum: { fontSize: 18, fontWeight: '700', color: '#11181C', lineHeight: 22 },
+  dayMonth: { fontSize: 10, fontWeight: '400', color: '#9BA1A6', marginTop: 1 },
 
   exerciseCard: {
     flex: 1,
@@ -239,24 +227,6 @@ const styles = StyleSheet.create({
     color: '#11181C',
   },
   rehabName: { color: '#fff', fontWeight: '600' },
-
-  fab: {
-    position: 'absolute',
-    bottom: 28,
-    right: 24,
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#11181C',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  fabIcon: { fontSize: 28, color: '#fff', lineHeight: 32 },
 
   // Camera modal
   cameraScreen: {
