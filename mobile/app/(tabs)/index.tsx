@@ -1,98 +1,135 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { Colors } from '@/constants/theme';
+import { INJURY_PROFILE_KEY, type InjuryProfile } from '@/app/injury-report';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const colorScheme = useColorScheme() ?? 'light';
+  const colors = Colors[colorScheme];
+  const [profile, setProfile] = useState<InjuryProfile | null>(null);
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  useEffect(() => {
+    AsyncStorage.getItem(INJURY_PROFILE_KEY).then((raw) => {
+      if (raw) setProfile(JSON.parse(raw));
+    });
+  }, []);
+
+  return (
+    <ThemedView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ThemedText type="title" style={styles.heading}>HackHealth 2026</ThemedText>
+
+        {profile ? (
+          <ThemedView style={[styles.card, { borderColor: colors.tint, borderWidth: 1 }]}>
+            <ThemedText type="defaultSemiBold" style={styles.cardTitle}>Your Injury Profile</ThemedText>
+            <Row label="Sport / Activity" value={profile.sportActivity} />
+            <Row label="Date of Injury" value={profile.dateOfInjury} />
+            <Row label="How it happened" value={profile.howItHappened} />
+            {profile.doctorDiagnosis ? <Row label="Diagnosis" value={profile.doctorDiagnosis} /> : null}
+            {profile.initialSymptoms ? <Row label="Symptoms" value={profile.initialSymptoms} /> : null}
+            <TouchableOpacity
+              style={[styles.editButton, { borderColor: colors.tint }]}
+              onPress={() => router.push('/injury-report')}
+              activeOpacity={0.7}
+            >
+              <ThemedText style={[styles.editButtonText, { color: colors.tint }]}>Edit Profile</ThemedText>
+            </TouchableOpacity>
+          </ThemedView>
+        ) : (
+          <ThemedView style={styles.emptyState}>
+            <ThemedText style={styles.emptyText}>
+              Get started by setting up your injury profile.
+            </ThemedText>
+            <TouchableOpacity
+              style={[styles.primaryButton, { backgroundColor: colors.tint }]}
+              onPress={() => router.push('/injury-report')}
+              activeOpacity={0.8}
+            >
+              <ThemedText style={styles.primaryButtonText}>Set Up Injury Profile</ThemedText>
+            </TouchableOpacity>
+          </ThemedView>
+        )}
+      </ScrollView>
+    </ThemedView>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <ThemedView style={styles.row}>
+      <ThemedText type="defaultSemiBold" style={styles.rowLabel}>{label}</ThemedText>
+      <ThemedText style={styles.rowValue}>{value}</ThemedText>
+    </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
+  container: {
+    flex: 1,
+  },
+  content: {
+    padding: 24,
+    paddingTop: 64,
+    paddingBottom: 48,
+  },
+  heading: {
+    marginBottom: 32,
+  },
+  emptyState: {
+    gap: 20,
+  },
+  emptyText: {
+    opacity: 0.6,
+    lineHeight: 22,
+  },
+  primaryButton: {
+    borderRadius: 12,
+    paddingVertical: 16,
     alignItems: 'center',
-    gap: 8,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  primaryButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  card: {
+    borderRadius: 14,
+    padding: 18,
+    gap: 10,
+  },
+  cardTitle: {
+    fontSize: 18,
+    marginBottom: 4,
+  },
+  row: {
+    gap: 2,
+    backgroundColor: 'transparent',
+  },
+  rowLabel: {
+    fontSize: 12,
+    opacity: 0.5,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  rowValue: {
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  editButton: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  editButtonText: {
+    fontSize: 15,
+    fontWeight: '500',
   },
 });
