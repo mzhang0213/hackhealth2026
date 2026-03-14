@@ -6,8 +6,8 @@ import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
-import { INJURY_PROFILE_KEY, type InjuryProfile } from '@/app/injury-report';
-import { BODY_DIAGRAM_KEY, type MarkedPart } from '@/app/body-diagram';
+import { INJURY_PROFILE_KEY, type InjuryProfile } from '@/constants/injury-store';
+import { BODY_DIAGRAM_KEY, type MarkedPart } from '@/constants/body-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function HomeScreen() {
