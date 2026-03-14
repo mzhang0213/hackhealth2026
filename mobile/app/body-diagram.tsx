@@ -343,7 +343,7 @@ export default function BodyDiagramScreen() {
                 maxLength={10}
               />
 
-              <ThemedText type="defaultSemiBold" style={styles.fieldLabel}>Doctor's Diagnosis</ThemedText>
+              <ThemedText type="defaultSemiBold" style={styles.fieldLabel}>Doctor Diagnosis</ThemedText>
               <BottomSheetTextInput
                 style={[styles.input, styles.multiline, { backgroundColor: inputBg, color: colors.text, borderColor }]}
                 placeholder="e.g. Grade II sprain, ACL tear..."
