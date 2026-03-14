@@ -103,35 +103,32 @@ export default function ExercisesScreen() {
       <ScrollView contentContainerStyle={styles.list}>
         {SECTIONS.map((section, si) => (
           <View key={si} style={styles.section}>
-            {/* Day rows */}
-            {section.exercises.map((ex, ei) => (
-              <View key={ex.id} style={styles.row}>
-                {/* Day bubble — only on first exercise of section */}
-                <View style={styles.dayBubbleCol}>
-                  {ei === 0 ? (
-                    <View style={styles.dayBubble}>
-                      <Text style={styles.dayAbbr}>{section.dayAbbr}</Text>
-                      <Text style={styles.dayNum}>{section.dayNum}</Text>
-                      <Text style={styles.dayMonth}>{section.month}</Text>
-                    </View>
-                  ) : (
-                    <View style={styles.dayBubbleSpacer} />
-                  )}
+            {/* Left: date bubble | Right: exercise stack */}
+            <View style={styles.row}>
+              <View style={styles.dayBubbleCol}>
+                <View style={styles.dayBubble}>
+                  <Text style={styles.dayAbbr}>{section.dayAbbr}</Text>
+                  <Text style={styles.dayNum}>{section.dayNum}</Text>
+                  <Text style={styles.dayMonth}>{section.month}</Text>
                 </View>
-
-                {/* Exercise card */}
-                <TouchableOpacity
-                  style={[styles.exerciseCard, ex.isRehab && styles.rehabCard]}
-                  onPress={() => handleExercisePress(ex, ex.isRehab)}
-                  activeOpacity={0.75}
-                >
-                  <View style={[styles.accentBar, { backgroundColor: ex.accentColor }]} />
-                  <Text style={[styles.exerciseName, ex.isRehab && styles.rehabName]}>
-                    {ex.name}
-                  </Text>
-                </TouchableOpacity>
               </View>
-            ))}
+
+              <View style={styles.exerciseCol}>
+                {section.exercises.map((ex) => (
+                  <TouchableOpacity
+                    key={ex.id}
+                    style={[styles.exerciseCard, ex.isRehab && styles.rehabCard]}
+                    onPress={() => handleExercisePress(ex, ex.isRehab)}
+                    activeOpacity={0.75}
+                  >
+                    <View style={[styles.accentBar, { backgroundColor: ex.accentColor }]} />
+                    <Text style={[styles.exerciseName, ex.isRehab && styles.rehabName]}>
+                      {ex.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
           </View>
         ))}
       </ScrollView>
@@ -182,11 +179,11 @@ const styles = StyleSheet.create({
   },
   list: { paddingHorizontal: 16, paddingBottom: 32 },
 
-  section: { marginBottom: 4 },
+  section: { marginBottom: 12 },
 
-  row: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6 },
+  row: { flexDirection: 'row', alignItems: 'flex-start' },
 
-  dayBubbleCol: { width: 52, alignItems: 'center', marginRight: 10 },
+  dayBubbleCol: { width: 52, alignItems: 'center', marginRight: 10, paddingTop: 2 },
   dayBubble: {
     width: 50,
     paddingVertical: 6,
@@ -197,7 +194,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#fff',
   },
-  dayBubbleSpacer: { width: 50 },
+  exerciseCol: { flex: 1, gap: 6 },
   dayAbbr: { fontSize: 11, fontWeight: '600', color: '#687076', letterSpacing: 0.3 },
   dayNum: { fontSize: 18, fontWeight: '700', color: '#11181C', lineHeight: 22 },
   dayMonth: { fontSize: 10, fontWeight: '400', color: '#9BA1A6', marginTop: 1 },
