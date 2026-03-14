@@ -5,7 +5,6 @@ import BottomSheet, {
   BottomSheetTextInput,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
-import Body, { type ExtendedBodyPart, type Slug } from 'react-native-body-highlighter';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -24,6 +23,7 @@ import {
   type InjuryStatus,
   type MarkedPart,
 } from '@/constants/body-store';
+import Body, {ExtendedBodyPart, Slug} from "react-native-body-highlighter";
 
 const STATUS_COLORS: Record<InjuryStatus, string> = {
   pain: '#EF4444',
