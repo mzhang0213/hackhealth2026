@@ -1,118 +1,3 @@
-<<<<<<< Updated upstream
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
-
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
-import { INJURY_PROFILE_KEY, type InjuryProfile } from '@/app/injury-report';
-import { BODY_DIAGRAM_KEY, type MarkedPart } from '@/app/body-diagram';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
-export default function HomeScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
-  const isDark = colorScheme === 'dark';
-  const [profile, setProfile] = useState<InjuryProfile | null>(null);
-  const [bodyParts, setBodyParts] = useState<Record<string, MarkedPart>>({});
-
-  useEffect(() => {
-    AsyncStorage.getItem(INJURY_PROFILE_KEY).then((raw) => {
-      if (raw) setProfile(JSON.parse(raw));
-    });
-    AsyncStorage.getItem(BODY_DIAGRAM_KEY).then((raw) => {
-      if (raw) setBodyParts(JSON.parse(raw));
-    });
-  }, []);
-
-  return (
-    <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <ThemedText type="title" style={styles.heading}>HackHealth 2026</ThemedText>
-
-        {/* Body Map card */}
-        <TouchableOpacity
-          style={[styles.mapCard, { backgroundColor: isDark ? '#1e2122' : '#f5f5f5' }]}
-          onPress={() => router.push('/body-diagram')}
-          activeOpacity={0.8}
-        >
-          <View style={styles.mapCardHeader}>
-            <ThemedText type="defaultSemiBold" style={styles.mapCardTitle}>Body Map</ThemedText>
-            <ThemedText style={[styles.mapCardChevron, { color: colors.icon }]}>›</ThemedText>
-          </View>
-          {Object.keys(bodyParts).length > 0 ? (
-            <View style={styles.statusDots}>
-              {Object.values(bodyParts).slice(0, 6).map((p, i) => (
-                <View
-                  key={i}
-                  style={[
-                    styles.statusDot,
-                    {
-                      backgroundColor:
-                        p.status === 'pain' ? '#EF4444'
-                        : p.status === 'moderate' ? '#F59E0B'
-                        : '#22C55E',
-                    },
-                  ]}
-                />
-              ))}
-              {Object.keys(bodyParts).length > 6 && (
-                <ThemedText style={[styles.moreText, { color: colors.icon }]}>
-                  +{Object.keys(bodyParts).length - 6} more
-                </ThemedText>
-              )}
-            </View>
-          ) : (
-            <ThemedText style={[styles.mapCardSubtitle, { color: colors.icon }]}>
-              Tap to mark injured areas
-            </ThemedText>
-          )}
-        </TouchableOpacity>
-
-        {profile ? (
-          <ThemedView style={[styles.card, { borderColor: colors.tint, borderWidth: 1 }]}>
-            <ThemedText type="defaultSemiBold" style={styles.cardTitle}>Your Injury Profile</ThemedText>
-            <Row label="Sport / Activity" value={profile.sportActivity} />
-            <Row label="Date of Injury" value={profile.dateOfInjury} />
-            <Row label="How it happened" value={profile.howItHappened} />
-            {profile.doctorDiagnosis ? <Row label="Diagnosis" value={profile.doctorDiagnosis} /> : null}
-            {profile.initialSymptoms ? <Row label="Symptoms" value={profile.initialSymptoms} /> : null}
-            <TouchableOpacity
-              style={[styles.editButton, { borderColor: colors.tint }]}
-              onPress={() => router.push('/injury-report')}
-              activeOpacity={0.7}
-            >
-              <ThemedText style={[styles.editButtonText, { color: colors.tint }]}>Edit Profile</ThemedText>
-            </TouchableOpacity>
-          </ThemedView>
-        ) : (
-          <ThemedView style={styles.emptyState}>
-            <ThemedText style={styles.emptyText}>
-              Get started by setting up your injury profile.
-            </ThemedText>
-            <TouchableOpacity
-              style={[styles.primaryButton, { backgroundColor: colors.tint }]}
-              onPress={() => router.push('/injury-report')}
-              activeOpacity={0.8}
-            >
-              <ThemedText style={styles.primaryButtonText}>Set Up Injury Profile</ThemedText>
-            </TouchableOpacity>
-          </ThemedView>
-        )}
-      </ScrollView>
-    </ThemedView>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <ThemedView style={styles.row}>
-      <ThemedText type="defaultSemiBold" style={styles.rowLabel}>{label}</ThemedText>
-      <ThemedText style={styles.rowValue}>{value}</ThemedText>
-    </ThemedView>
-=======
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, SafeAreaView, TouchableOpacity, Modal, TextInput, ScrollView, Alert } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
@@ -131,34 +16,23 @@ export default function App() {
   // --- STATE ---
   const [injuredParts, setInjuredParts] = useState({});
   const [isFrontView, setIsFrontView] = useState(true);
-  
-  // Modals
   const [modalVisible, setModalVisible] = useState(false);
   const [noteModalVisible, setNoteModalVisible] = useState(false);
-  
-  // Form Inputs
   const [activeMuscle, setActiveMuscle] = useState(null);
   const [painLevel, setPainLevel] = useState(1);
   const [noteContent, setNoteContent] = useState('');
   const [targetMuscle, setTargetMuscle] = useState('');
-  
-  // Search
   const [zipQuery, setZipQuery] = useState('');
   const [insuranceQuery, setInsuranceQuery] = useState('');
   const [matchedClinics, setMatchedClinics] = useState([]);
   const [hasSearched, setHasSearched] = useState(false);
 
-  // --- DATABASE: LOAD DATA ---
   useEffect(() => {
     fetchInjuries();
   }, []);
 
   const fetchInjuries = async () => {
-    const { data, error } = await supabase
-      .from('injury_logs')
-      .select('*')
-      .order('created_at', { ascending: false });
-
+    const { data, error } = await supabase.from('injury_logs').select('*').order('created_at', { ascending: false });
     if (error) console.error("Database Error:", error.message);
     else if (data) {
       const loadedParts = {};
@@ -176,7 +50,6 @@ export default function App() {
     }
   };
 
-  // --- DATABASE: SAVE INJURY ---
   const saveInjury = async () => {
     let color = 'rgba(6, 182, 212, 0.1)'; 
     let borderColor = '#06b6d4'; 
@@ -184,17 +57,14 @@ export default function App() {
     else if (painLevel <= 6) { color = 'rgba(250, 204, 21, 0.4)'; borderColor = '#facc15'; } 
     else { color = 'rgba(239, 68, 68, 0.5)'; borderColor = '#ef4444'; } 
 
-    const newEntry = { muscle: activeMuscle, pain_level: painLevel, color, border_color: borderColor };
-    
     setInjuredParts({ ...injuredParts, [activeMuscle]: { level: painLevel, color, borderColor, date: 'Saving...' } });
     setModalVisible(false);
 
-    const { error } = await supabase.from('injury_logs').insert([newEntry]);
+    const { error } = await supabase.from('injury_logs').insert([{ muscle: activeMuscle, pain_level: painLevel, color, border_color: borderColor }]);
     if (error) console.error("Save Error:", error.message);
     fetchInjuries();
   };
 
-  // --- DATABASE: SAVE NOTE ---
   const savePatientNote = async () => {
     const { error } = await supabase.from('patient_notes').insert([{ muscle_group: targetMuscle, content: noteContent }]);
     if (error) console.error("Note Save Error:", error.message);
@@ -205,28 +75,35 @@ export default function App() {
     }
   };
 
-  // --- STORAGE: FILE UPLOAD ---
   const handleFileUpload = async (muscle) => {
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true });
       if (result.canceled) return;
-
       const file = result.assets[0];
       const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
       const filePath = `uploads/${muscle}_${Date.now()}_${file.name}`;
-
-      const { data, error } = await supabase.storage
-        .from('patient_files')
-        .upload(filePath, decode(base64), { contentType: file.mimeType });
-
+      const { error } = await supabase.storage.from('patient_files').upload(filePath, decode(base64), { contentType: file.mimeType });
       if (error) throw error;
-      Alert.alert("Upload Complete", `${file.name} has been saved to Supabase.`);
+      Alert.alert("Upload Complete", `${file.name} saved to Supabase.`);
     } catch (err) {
       Alert.alert("Upload Failed", err.message);
     }
   };
 
-  // --- UI HELPERS ---
+  const runAIScan = async (muscle) => {
+    try {
+      const response = await fetch('http://localhost:5000/analyze-range', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ muscle: muscle })
+      });
+      const data = await response.json();
+      Alert.alert("🤖 AI_VISION_ANALYSIS", `Muscle: ${muscle}\nROM Angle: ${data.angle}°\n\nStatus: ${data.message}`);
+    } catch (err) {
+      Alert.alert("Server Offline", "Ensure your Python server is running on port 5000.");
+    }
+  };
+
   const renderBodyPart = (name, w, h) => {
     const data = injuredParts[name];
     const bg = data ? data.color : 'rgba(6, 182, 212, 0.05)';
@@ -239,16 +116,9 @@ export default function App() {
     );
   };
 
-  const findClinics = () => {
-    setHasSearched(true);
-    setMatchedClinics(CLINIC_DB.filter(c => c.insurance.some(i => i.toLowerCase().includes(insuranceQuery.toLowerCase())) && (zipQuery === '' || c.zip === zipQuery)));
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={{ paddingBottom: 50 }}>
-        
-        {/* HEADER */}
         <View style={styles.header}>
           <Text style={styles.title}>RECOVERY_HUD_v1.0</Text>
           <TouchableOpacity style={styles.flipBtn} onPress={() => setIsFrontView(!isFrontView)}>
@@ -256,7 +126,6 @@ export default function App() {
           </TouchableOpacity>
         </View>
 
-        {/* BODY MAP */}
         <View style={styles.mapContainer}>
           {isFrontView ? (
             <><View style={styles.row}>{renderBodyPart('Head', 100, 70)}</View>
@@ -271,7 +140,6 @@ export default function App() {
           )}
         </View>
 
-        {/* LOGS DASHBOARD */}
         {Object.keys(injuredParts).length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>// ACTIVE_TRAUMA_LOGS</Text>
@@ -280,35 +148,26 @@ export default function App() {
                 <View style={styles.cardHead}><Text style={styles.cardTitle}>{m}</Text><Text style={styles.cardDate}>{injuredParts[m].date}</Text></View>
                 <Text style={styles.cardInfo}>PAIN_INDEX: {injuredParts[m].level}/10</Text>
                 <View style={styles.btnRow}>
-                  <TouchableOpacity style={styles.btnMain} onPress={() => handleFileUpload(m)}><Text style={styles.btnText}>📁 UPLOAD DOCS</Text></TouchableOpacity>
+                  <TouchableOpacity style={styles.btnMain} onPress={() => handleFileUpload(m)}><Text style={styles.btnText}>📁 UPLOAD</Text></TouchableOpacity>
                   <TouchableOpacity style={styles.btnAlt} onPress={() => { setTargetMuscle(m); setNoteModalVisible(true); }}><Text style={styles.btnTextAlt}>📝 SYMPTOMS</Text></TouchableOpacity>
                 </View>
+                <TouchableOpacity style={[styles.btnMain, { backgroundColor: '#a855f7', marginTop: 10 }]} onPress={() => runAIScan(m)}>
+                  <Text style={styles.btnText}>🤖 RUN AI SCAN</Text>
+                </TouchableOpacity>
               </View>
             ))}
           </View>
         )}
-
-        {/* PT MATCHER */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>// IN_NETWORK_SCANNER</Text>
-          <View style={styles.inputRow}>
-            <TextInput style={[styles.input, { flex: 1, marginRight: 10 }]} placeholder="Zip" placeholderTextColor="#475569" value={zipQuery} onChangeText={setZipQuery}/>
-            <TextInput style={[styles.input, { flex: 2 }]} placeholder="Insurance" placeholderTextColor="#475569" value={insuranceQuery} onChangeText={setInsuranceQuery}/>
-          </View>
-          <TouchableOpacity style={styles.scanBtn} onPress={findClinics}><Text style={styles.scanBtnText}>RUN SCAN</Text></TouchableOpacity>
-          {hasSearched && matchedClinics.map(c => <View key={c.id} style={styles.clinicCard}><Text style={styles.clinicName}>{c.name}</Text><Text style={styles.clinicDetails}>📍 {c.distance}</Text></View>)}
-        </View>
-
       </ScrollView>
 
-      {/* PAIN MODAL */}
+      {/* MODALS */}
       <Modal animationType="slide" transparent visible={modalVisible}>
         <View style={styles.modalBg}><View style={styles.modalBody}>
           <Text style={styles.modalTitle}>// LOG: {activeMuscle}</Text>
           <View style={styles.sliderRow}>{[1,2,3,4,5,6,7,8,9,10].map(i => (
             <TouchableOpacity key={i} onPress={() => setPainLevel(i)} style={[styles.block, { backgroundColor: i <= painLevel ? (i<=3?'#4ade80':i<=6?'#facc15':'#ef4444') : '#1e293b' }]}><Text style={styles.blockText}>{i}</Text></TouchableOpacity>
           ))}</View>
-          <TouchableOpacity style={styles.modalSave} onPress={saveInjury}><Text style={styles.saveText}>INITIALIZE SAVE</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.modalSave} onPress={saveInjury}><Text style={styles.saveText}>SAVE</Text></TouchableOpacity>
           <TouchableOpacity onPress={() => setModalVisible(false)}><Text style={styles.cancelText}>ABORT</Text></TouchableOpacity>
         </View></View>
       </Modal>
@@ -316,121 +175,19 @@ export default function App() {
       <Modal animationType="fade" transparent visible={noteModalVisible}>
         <View style={styles.modalBg}><View style={styles.modalBody}>
           <Text style={styles.modalTitle}>// CLINICAL_ENTRY: {targetMuscle}</Text>
-          
-          <TextInput 
-            style={styles.textArea} 
-            multiline 
-            placeholder="Type clinical notes..." 
-            placeholderTextColor="#475569" 
-            value={noteContent} 
-            onChangeText={setNoteContent}
-          />
-
-          {/* ADD THIS NEW BUTTON HERE */}
-          <TouchableOpacity 
-            style={[styles.btnAlt, { marginBottom: 15, padding: 15 }]} 
-            onPress={() => handleFileUpload(targetMuscle)}
-          >
-            <Text style={styles.btnTextAlt}>📎 ATTACH MEDICAL DOCUMENT (PDF/IMG)</Text>
+          <TextInput style={styles.textArea} multiline placeholder="Type clinical notes..." placeholderTextColor="#475569" value={noteContent} onChangeText={setNoteContent}/>
+          <TouchableOpacity style={[styles.btnAlt, { marginBottom: 15, padding: 15 }]} onPress={() => handleFileUpload(targetMuscle)}>
+            <Text style={styles.btnTextAlt}>📎 ATTACH MEDICAL DOCUMENT</Text>
           </TouchableOpacity>
-
-          <TouchableOpacity style={styles.modalSave} onPress={savePatientNote}>
-            <Text style={styles.saveText}>UPLOAD TEXT TO CLOUD</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity onPress={() => setNoteModalVisible(false)}>
-            <Text style={styles.cancelText}>CANCEL</Text>
-          </TouchableOpacity>
+          <TouchableOpacity style={styles.modalSave} onPress={savePatientNote}><Text style={styles.saveText}>UPLOAD TEXT</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => setNoteModalVisible(false)}><Text style={styles.cancelText}>CANCEL</Text></TouchableOpacity>
         </View></View>
       </Modal>
     </SafeAreaView>
->>>>>>> Stashed changes
   );
 }
 
 const styles = StyleSheet.create({
-<<<<<<< Updated upstream
-  container: {
-    flex: 1,
-  },
-  content: {
-    padding: 24,
-    paddingTop: 64,
-    paddingBottom: 48,
-  },
-  heading: {
-    marginBottom: 32,
-  },
-  emptyState: {
-    gap: 20,
-  },
-  emptyText: {
-    opacity: 0.6,
-    lineHeight: 22,
-  },
-  primaryButton: {
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  mapCard: {
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 20,
-  },
-  mapCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  mapCardTitle: { fontSize: 16 },
-  mapCardChevron: { fontSize: 22 },
-  mapCardSubtitle: { fontSize: 13 },
-  statusDots: { flexDirection: 'row', gap: 6, alignItems: 'center' },
-  statusDot: { width: 12, height: 12, borderRadius: 6 },
-  moreText: { fontSize: 12, marginLeft: 2 },
-  card: {
-    borderRadius: 14,
-    padding: 18,
-    gap: 10,
-  },
-  cardTitle: {
-    fontSize: 18,
-    marginBottom: 4,
-  },
-  row: {
-    gap: 2,
-    backgroundColor: 'transparent',
-  },
-  rowLabel: {
-    fontSize: 12,
-    opacity: 0.5,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  rowValue: {
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  editButton: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  editButtonText: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-});
-=======
   container: { flex: 1, backgroundColor: '#020617' },
   header: { alignItems: 'center', marginTop: 40, marginBottom: 10 },
   title: { fontSize: 24, fontWeight: '900', color: '#06b6d4', letterSpacing: 2 },
@@ -453,13 +210,6 @@ const styles = StyleSheet.create({
   btnText: { color: '#020617', fontWeight: 'bold', fontSize: 12 },
   btnAlt: { flex: 1, borderWidth: 1, borderColor: '#38bdf8', padding: 10, borderRadius: 4, alignItems: 'center' },
   btnTextAlt: { color: '#38bdf8', fontWeight: 'bold', fontSize: 12 },
-  inputRow: { flexDirection: 'row', marginBottom: 10 },
-  input: { backgroundColor: '#0f172a', borderBottomWidth: 2, borderColor: '#06b6d4', color: '#fff', padding: 12 },
-  scanBtn: { backgroundColor: '#38bdf8', padding: 12, borderRadius: 4, alignItems: 'center' },
-  scanBtnText: { fontWeight: '900', color: '#020617' },
-  clinicCard: { backgroundColor: '#0f172a', padding: 12, marginTop: 5, borderRadius: 4 },
-  clinicName: { color: '#fff', fontWeight: 'bold' },
-  clinicDetails: { color: '#94a3b8', fontSize: 12 },
   modalBg: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.85)' },
   modalBody: { backgroundColor: '#0f172a', padding: 25, borderTopWidth: 2, borderColor: '#06b6d4' },
   modalTitle: { color: '#06b6d4', fontWeight: '900', marginBottom: 20 },
@@ -471,4 +221,3 @@ const styles = StyleSheet.create({
   cancelText: { color: '#ef4444', textAlign: 'center', fontSize: 12, marginTop: 5 },
   textArea: { backgroundColor: '#020617', color: '#fff', padding: 15, height: 100, borderRadius: 4, marginBottom: 20, textAlignVertical: 'top' }
 });
->>>>>>> Stashed changes
