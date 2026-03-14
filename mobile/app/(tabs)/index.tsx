@@ -231,13 +231,13 @@ function AiBanner() {
       <View style={aiStyles.inner}>
         <ArcReactor size={36} />
         <View style={aiStyles.textCol}>
-          <Text style={aiStyles.title}>AI.RECOVERY.ASSISTANT</Text>
+          <Text style={aiStyles.title}>AI RECOVERY ASSISTANT</Text>
           <Text style={aiStyles.sub}>
             PATTERN ANALYSIS · WEEKLY SUMMARIES · PROGRESS INSIGHTS
           </Text>
         </View>
         <TouchableOpacity style={aiStyles.btn} activeOpacity={0.75}>
-          <Text style={aiStyles.btnText}>[GENERATE.REPORT]</Text>
+          <Text style={aiStyles.btnText}>[GENERATE REPORT]</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -367,7 +367,7 @@ function DashHeader() {
         {/* Right: status + time + bell */}
         <View style={headerStyles.right}>
           <Animated.View style={[headerStyles.onlineDot, { opacity: sysPulse }]} />
-          <Text style={headerStyles.statusText}>SYS.ONLINE</Text>
+          <Text style={headerStyles.statusText}>SYS ONLINE</Text>
           <Text style={headerStyles.timeText}>{time}</Text>
           <View style={headerStyles.bellWrap}>
             <Ionicons name="notifications-outline" size={18} color={HUD.muted} />
@@ -586,7 +586,7 @@ export default function DashboardScreen() {
 
         {/* Operator status separator */}
         <View style={{ marginBottom: 8 }}>
-          <HudSeparator label="OPERATOR.STATUS" />
+          <HudSeparator label="OPERATOR STATUS" />
         </View>
 
         {/* Welcome */}
@@ -603,11 +603,11 @@ export default function DashboardScreen() {
                 },
               ]}
             >
-              OPERATOR_ALEX
+              OPERATOR ALEX
             </Text>
           </Text>
           <Text style={styles.statusLine}>
-            // DAY.056 :: ACL_RECOVERY_PROTOCOL :: STATUS.ACTIVE
+            // DAY 056 :: ACL RECOVERY PROTOCOL :: STATUS ACTIVE
           </Text>
         </View>
 
@@ -618,7 +618,7 @@ export default function DashboardScreen() {
 
         {/* Body Map */}
         <HudPanel
-          title="BIOMETRIC.SCANNER"
+          title="BIOMETRIC SCANNER"
           subtitle="TAP MARKERS FOR DIAGNOSTICS"
           style={{ marginBottom: 16 }}
         >
@@ -627,7 +627,7 @@ export default function DashboardScreen() {
 
         {/* Recovery chart */}
         <HudPanel
-          title="RECOVERY.ANALYTICS"
+          title="RECOVERY ANALYTICS"
           subtitle="TRACKING: PAIN | MOBILITY | STRENGTH"
           style={{ marginBottom: 16 }}
         >
@@ -636,7 +636,7 @@ export default function DashboardScreen() {
 
         {/* Exercise tracker */}
         <HudPanel
-          title="REHAB.PROTOCOL"
+          title="REHAB PROTOCOL"
           subtitle="DAILY EXERCISE QUEUE"
           style={{ marginBottom: 16 }}
         >
@@ -645,7 +645,7 @@ export default function DashboardScreen() {
 
         {/* Pain check-in */}
         <HudPanel
-          title="DAILY.DIAGNOSTIC"
+          title="DAILY DIAGNOSTIC"
           subtitle="SYMPTOM & PAIN INPUT"
           style={{ marginBottom: 24 }}
         >
@@ -654,7 +654,7 @@ export default function DashboardScreen() {
 
         {/* Quick access separator */}
         <View style={{ marginBottom: 16 }}>
-          <HudSeparator label="QUICK.ACCESS" />
+          <HudSeparator label="QUICK ACCESS" />
         </View>
 
         {/* Quick actions */}
@@ -662,19 +662,19 @@ export default function DashboardScreen() {
           <QuickActionCard
             icon="camera-outline"
             color={HUD.cyan}
-            title="PHOTO.TIMELINE"
+            title="PHOTO TIMELINE"
             subtitle="VISUAL RECOVERY DOCUMENTATION"
           />
           <QuickActionCard
             icon="location-outline"
             color={HUD.success}
-            title="PT.LOCATOR"
+            title="PT LOCATOR"
             subtitle="FIND SPECIALISTS NEARBY"
           />
           <QuickActionCard
             icon="scan-outline"
             color={HUD.warning}
-            title="ROM.ANALYSIS"
+            title="ROM ANALYSIS"
             subtitle="AI-POWERED MOVEMENT SCAN"
           />
         </View>

@@ -12,14 +12,14 @@ interface StatDef {
 }
 
 const STATS: StatDef[] = [
-  { label: 'RECOVERY.DAY', value: 56, icon: 'calendar-outline', color: HUD.cyan },
-  { label: 'STREAK.ACTIVE', value: 12, change: '+3', icon: 'flame-outline', color: HUD.warning },
-  { label: 'MOBILITY.INDEX', value: 78, change: '+5%', icon: 'analytics-outline', color: HUD.success },
-  { label: 'PAIN.REDUCTION', value: 62, change: '+8%', icon: 'trending-up-outline', color: HUD.cyan },
+  { label: 'RECOVERY DAY', value: 56, icon: 'calendar-outline', color: HUD.cyan },
+  { label: 'STREAK ACTIVE', value: 12, change: '+3', icon: 'flame-outline', color: HUD.warning },
+  { label: 'MOBILITY INDEX', value: 78, change: '+5%', icon: 'analytics-outline', color: HUD.success },
+  { label: 'PAIN REDUCTION', value: 62, change: '+8%', icon: 'trending-up-outline', color: HUD.cyan },
 ];
 
 function padNum(n: number): string {
-  return String(Math.floor(n)).padStart(3, '0');
+  return String(Math.floor(n));
 }
 
 function CornerAccentTL({ color }: { color: string }) {

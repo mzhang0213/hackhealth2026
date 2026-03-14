@@ -8,22 +8,23 @@ import BottomSheet, {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Platform,
   ScrollView,
   StyleSheet,
+  Text,
   TouchableOpacity,
   View,
-  useColorScheme,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
+import { HUD } from '@/constants/hud-theme';
 import {
   BODY_DIAGRAM_KEY,
   type InjuryStatus,
   type MarkedPart,
 } from '@/constants/body-store';
-import Body, {ExtendedBodyPart, Slug} from "react-native-body-highlighter";
+import Body, { ExtendedBodyPart, Slug } from 'react-native-body-highlighter';
 
 const STATUS_COLORS: Record<InjuryStatus, string> = {
   pain: '#EF4444',
@@ -32,9 +33,9 @@ const STATUS_COLORS: Record<InjuryStatus, string> = {
 };
 
 const STATUS_LABELS: Record<InjuryStatus, string> = {
-  pain: 'Pain',
-  moderate: 'Moderate',
-  recovering: 'Recovering',
+  pain: 'PAIN',
+  moderate: 'MODERATE',
+  recovering: 'RECOVERING',
 };
 
 function makeKey(slug: Slug, side?: 'left' | 'right') {
@@ -49,16 +50,11 @@ function formatSlug(slug: string) {
 }
 
 export default function BodyDiagramScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
-  const isDark = colorScheme === 'dark';
-
   const [view, setView] = useState<'front' | 'back'>('front');
   const [markedParts, setMarkedParts] = useState<Record<string, MarkedPart>>({});
   const [sheetMode, setSheetMode] = useState<'add' | 'view'>('add');
   const [activePart, setActivePart] = useState<{ slug: Slug; side?: 'left' | 'right' } | null>(null);
 
-  // Form fields (add mode)
   const [selectedStatus, setSelectedStatus] = useState<InjuryStatus>('pain');
   const [howItHappened, setHowItHappened] = useState('');
   const [dateOfInjury, setDateOfInjury] = useState('');
@@ -67,10 +63,6 @@ export default function BodyDiagramScreen() {
 
   const sheetRef = useRef<BottomSheet>(null);
   const snapPoints = useMemo(() => ['55%', '92%'], []);
-
-  const sheetBg = isDark ? '#1c1c1e' : '#ffffff';
-  const inputBg = isDark ? '#2c2c2e' : '#f2f2f7';
-  const borderColor = isDark ? '#3a3a3c' : '#e5e5ea';
 
   useEffect(() => {
     AsyncStorage.getItem(BODY_DIAGRAM_KEY).then((raw) => {
@@ -171,40 +163,74 @@ export default function BodyDiagramScreen() {
   const activeMarkedPart = activeKey ? markedParts[activeKey] : null;
 
   return (
-    <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <ThemedText type="title" style={styles.heading}>Body Map</ThemedText>
-        <ThemedText style={[styles.subtitle, { color: colors.icon }]}>
-          Tap a body part to log or view an injury.
-          {markedCount > 0 ? ` ${markedCount} area${markedCount !== 1 ? 's' : ''} marked.` : ''}
-        </ThemedText>
+    <SafeAreaView style={styles.safe}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.headerAccentLine} />
+          <View style={styles.headerRow}>
+            <View style={styles.headerTitleCol}>
+              <Text
+                style={[
+                  styles.heading,
+                  Platform.OS === 'ios' && {
+                    textShadowColor: HUD.cyan,
+                    textShadowOffset: { width: 0, height: 0 },
+                    textShadowRadius: 6,
+                  },
+                ]}
+              >
+                BODY MAP
+              </Text>
+              <Text style={styles.subtitle}>
+                {markedCount > 0
+                  ? `${markedCount} AREA${markedCount !== 1 ? 'S' : ''} MARKED — TAP TO VIEW OR LOG`
+                  : 'TAP A BODY PART TO LOG AN INJURY'}
+              </Text>
+            </View>
+            <View style={styles.headerBadge}>
+              <Ionicons name="body-outline" size={18} color={HUD.cyan} />
+            </View>
+          </View>
+        </View>
 
         {/* Front / Back toggle */}
-        <View style={[styles.toggleRow, { backgroundColor: isDark ? '#2a2a2a' : '#f0f0f0' }]}>
+        <View style={styles.toggleRow}>
           {(['front', 'back'] as const).map((v) => (
             <TouchableOpacity
               key={v}
-              style={[styles.toggleBtn, view === v && { backgroundColor: colors.tint }]}
+              style={[styles.toggleBtn, view === v && styles.toggleBtnActive]}
               onPress={() => setView(v)}
               activeOpacity={0.8}
             >
-              <ThemedText style={[styles.toggleLabel, view === v && styles.toggleLabelActive]}>
-                {v.charAt(0).toUpperCase() + v.slice(1)}
-              </ThemedText>
+              {view === v && <View style={styles.toggleActiveLine} />}
+              <Text style={[styles.toggleLabel, view === v && styles.toggleLabelActive]}>
+                {v.toUpperCase()}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
 
         {/* Body diagram */}
         <View style={styles.bodyContainer}>
+          {/* Corner accents */}
+          <View style={[styles.cornerH, { top: 0, left: 0, backgroundColor: HUD.cyan }]} />
+          <View style={[styles.cornerV, { top: 0, left: 0, backgroundColor: HUD.cyan }]} />
+          <View style={[styles.cornerH, { bottom: 0, right: 0, backgroundColor: HUD.cyan }]} />
+          <View style={[styles.cornerV, { bottom: 0, right: 0, backgroundColor: HUD.cyan }]} />
+
           <Body
             data={bodyData}
             side={view}
             scale={1.1}
             gender="male"
             onBodyPartPress={handleBodyPartPress}
-            defaultFill={isDark ? '#3a3a3a' : '#d0d0d0'}
-            border={isDark ? '#555' : '#bbb'}
+            defaultFill="#1a2535"
+            border="#2a3a50"
           />
         </View>
 
@@ -213,7 +239,7 @@ export default function BodyDiagramScreen() {
           {(Object.entries(STATUS_COLORS) as [InjuryStatus, string][]).map(([status, color]) => (
             <View key={status} style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: color }]} />
-              <ThemedText style={styles.legendLabel}>{STATUS_LABELS[status]}</ThemedText>
+              <Text style={[styles.legendLabel, { color }]}>{STATUS_LABELS[status]}</Text>
             </View>
           ))}
         </View>
@@ -221,13 +247,19 @@ export default function BodyDiagramScreen() {
         {/* Marked parts list */}
         {markedCount > 0 && (
           <View style={styles.partsList}>
-            <ThemedText type="defaultSemiBold" style={styles.partsHeader}>Marked Areas</ThemedText>
+            {/* Section header */}
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionLine} />
+              <Text style={styles.sectionTitle}>MARKED AREAS</Text>
+              <View style={styles.sectionLine} />
+            </View>
+
             {Object.values(markedParts).map((p) => {
               const key = makeKey(p.slug, p.side);
               return (
                 <TouchableOpacity
                   key={key}
-                  style={[styles.partRow, { borderBottomColor: borderColor }]}
+                  style={styles.partRow}
                   onPress={() => {
                     setActivePart({ slug: p.slug, side: p.side });
                     setSheetMode('view');
@@ -235,19 +267,23 @@ export default function BodyDiagramScreen() {
                   }}
                   activeOpacity={0.7}
                 >
-                  <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[p.status] }]} />
-                  <ThemedText style={styles.partName}>
-                    {formatSlug(p.slug)}{p.side ? ` (${p.side})` : ''}
-                  </ThemedText>
-                  <ThemedText style={[styles.partStatus, { color: STATUS_COLORS[p.status] }]}>
+                  {/* Left accent */}
+                  <View style={[styles.partRowAccent, { backgroundColor: STATUS_COLORS[p.status] }]} />
+                  <View style={[styles.partDot, { backgroundColor: STATUS_COLORS[p.status] }]} />
+                  <Text style={styles.partName}>
+                    {formatSlug(p.slug).toUpperCase()}{p.side ? ` (${p.side.toUpperCase()})` : ''}
+                  </Text>
+                  <Text style={[styles.partStatus, { color: STATUS_COLORS[p.status] }]}>
                     {STATUS_LABELS[p.status]}
-                  </ThemedText>
-                  <ThemedText style={[styles.chevron, { color: colors.icon }]}>›</ThemedText>
+                  </Text>
+                  <Ionicons name="chevron-forward-outline" size={14} color={HUD.muted} />
                 </TouchableOpacity>
               );
             })}
+
             <TouchableOpacity onPress={handleClearAll} style={styles.clearAllBtn}>
-              <ThemedText style={styles.clearAllText}>Clear All</ThemedText>
+              <Ionicons name="trash-outline" size={13} color="#EF4444" />
+              <Text style={styles.clearAllText}>CLEAR ALL</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -262,30 +298,30 @@ export default function BodyDiagramScreen() {
         backdropComponent={renderBackdrop}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        handleIndicatorStyle={{ backgroundColor: colors.icon }}
-        backgroundStyle={{ backgroundColor: sheetBg }}
+        handleIndicatorStyle={{ backgroundColor: HUD.border }}
+        backgroundStyle={{ backgroundColor: '#0d1623' }}
       >
         <BottomSheetScrollView contentContainerStyle={styles.sheetContent}>
           {/* Sheet header */}
+          <View style={styles.sheetTopAccent} />
           <View style={styles.sheetHeader}>
-            <ThemedText style={styles.sheetTitle}>
-              {activePart ? formatSlug(activePart.slug) : ''}
-              {activePart?.side ? ` (${activePart.side})` : ''}
-            </ThemedText>
-            {sheetMode === 'view' && activeMarkedPart && (
-              <View
-                style={[
-                  styles.statusBadge,
-                  {
-                    backgroundColor: STATUS_COLORS[activeMarkedPart.status] + '22',
-                    borderColor: STATUS_COLORS[activeMarkedPart.status],
-                  },
-                ]}
-              >
-                <View style={[styles.badgeDot, { backgroundColor: STATUS_COLORS[activeMarkedPart.status] }]} />
-                <ThemedText style={[styles.badgeText, { color: STATUS_COLORS[activeMarkedPart.status] }]}>
-                  {STATUS_LABELS[activeMarkedPart.status]}
-                </ThemedText>
+            <View style={styles.sheetTitleCol}>
+              <Text style={styles.sheetTitle}>
+                {activePart ? formatSlug(activePart.slug).toUpperCase() : ''}
+                {activePart?.side ? ` (${activePart.side.toUpperCase()})` : ''}
+              </Text>
+              {sheetMode === 'view' && activeMarkedPart && (
+                <View style={styles.sheetSubRow}>
+                  <View style={[styles.sheetSubDot, { backgroundColor: STATUS_COLORS[activeMarkedPart.status] }]} />
+                  <Text style={[styles.sheetSubText, { color: STATUS_COLORS[activeMarkedPart.status] }]}>
+                    {STATUS_LABELS[activeMarkedPart.status]}
+                  </Text>
+                </View>
+              )}
+            </View>
+            {sheetMode === 'add' && (
+              <View style={styles.sheetAddBadge}>
+                <Text style={styles.sheetAddBadgeText}>LOG INJURY</Text>
               </View>
             )}
           </View>
@@ -293,40 +329,38 @@ export default function BodyDiagramScreen() {
           {sheetMode === 'add' ? (
             <>
               {/* Status picker */}
-              <ThemedText type="defaultSemiBold" style={styles.fieldLabel}>Status</ThemedText>
+              <Text style={styles.fieldLabel}>STATUS</Text>
               <View style={styles.statusRow}>
                 {(Object.keys(STATUS_COLORS) as InjuryStatus[]).map((s) => (
                   <TouchableOpacity
                     key={s}
                     style={[
                       styles.statusChip,
-                      {
-                        backgroundColor: selectedStatus === s
-                          ? STATUS_COLORS[s]
-                          : inputBg,
-                        borderColor: STATUS_COLORS[s],
-                      },
+                      { borderColor: STATUS_COLORS[s] },
+                      selectedStatus === s && { backgroundColor: STATUS_COLORS[s] + '30' },
                     ]}
                     onPress={() => setSelectedStatus(s)}
                     activeOpacity={0.7}
                   >
-                    <ThemedText style={[styles.statusChipText, selectedStatus === s && styles.statusChipTextActive]}>
+                    <View style={[styles.statusChipDot, { backgroundColor: STATUS_COLORS[s] }]} />
+                    <Text style={[
+                      styles.statusChipText,
+                      { color: selectedStatus === s ? STATUS_COLORS[s] : HUD.muted },
+                    ]}>
                       {STATUS_LABELS[s]}
-                    </ThemedText>
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
 
-              <View style={[styles.divider, { backgroundColor: borderColor }]} />
-              <ThemedText style={[styles.optionalNote, { color: colors.icon }]}>
-                All fields below are optional
-              </ThemedText>
+              <View style={styles.divider} />
+              <Text style={styles.optionalNote}>// ALL FIELDS BELOW ARE OPTIONAL</Text>
 
-              <ThemedText type="defaultSemiBold" style={styles.fieldLabel}>How did it happen?</ThemedText>
+              <Text style={styles.fieldLabel}>HOW DID IT HAPPEN?</Text>
               <BottomSheetTextInput
-                style={[styles.input, styles.multiline, { backgroundColor: inputBg, color: colors.text, borderColor }]}
+                style={[styles.input, styles.multiline]}
                 placeholder="Describe what happened..."
-                placeholderTextColor={colors.icon}
+                placeholderTextColor={HUD.muted}
                 value={howItHappened}
                 onChangeText={setHowItHappened}
                 multiline
@@ -334,22 +368,22 @@ export default function BodyDiagramScreen() {
                 textAlignVertical="top"
               />
 
-              <ThemedText type="defaultSemiBold" style={styles.fieldLabel}>Date of Injury</ThemedText>
+              <Text style={styles.fieldLabel}>DATE OF INJURY</Text>
               <BottomSheetTextInput
-                style={[styles.input, { backgroundColor: inputBg, color: colors.text, borderColor }]}
+                style={styles.input}
                 placeholder="MM/DD/YYYY"
-                placeholderTextColor={colors.icon}
+                placeholderTextColor={HUD.muted}
                 value={dateOfInjury}
                 onChangeText={setDateOfInjury}
                 keyboardType="numbers-and-punctuation"
                 maxLength={10}
               />
 
-              <ThemedText type="defaultSemiBold" style={styles.fieldLabel}>Doctor Diagnosis</ThemedText>
+              <Text style={styles.fieldLabel}>DOCTOR DIAGNOSIS</Text>
               <BottomSheetTextInput
-                style={[styles.input, styles.multiline, { backgroundColor: inputBg, color: colors.text, borderColor }]}
+                style={[styles.input, styles.multiline]}
                 placeholder="e.g. Grade II sprain, ACL tear..."
-                placeholderTextColor={colors.icon}
+                placeholderTextColor={HUD.muted}
                 value={doctorDiagnosis}
                 onChangeText={setDoctorDiagnosis}
                 multiline
@@ -357,11 +391,11 @@ export default function BodyDiagramScreen() {
                 textAlignVertical="top"
               />
 
-              <ThemedText type="defaultSemiBold" style={styles.fieldLabel}>Initial Symptoms</ThemedText>
+              <Text style={styles.fieldLabel}>INITIAL SYMPTOMS</Text>
               <BottomSheetTextInput
-                style={[styles.input, styles.multiline, { backgroundColor: inputBg, color: colors.text, borderColor }]}
+                style={[styles.input, styles.multiline]}
                 placeholder="e.g. Swelling, limited range of motion..."
-                placeholderTextColor={colors.icon}
+                placeholderTextColor={HUD.muted}
                 value={initialSymptoms}
                 onChangeText={setInitialSymptoms}
                 multiline
@@ -370,11 +404,13 @@ export default function BodyDiagramScreen() {
               />
 
               <TouchableOpacity
-                style={[styles.saveBtn, { backgroundColor: colors.tint }]}
+                style={styles.saveBtn}
                 onPress={handleSave}
                 activeOpacity={0.8}
               >
-                <ThemedText style={styles.saveBtnText}>Save</ThemedText>
+                <View style={styles.saveBtnAccentTL} />
+                <View style={styles.saveBtnAccentBR} />
+                <Text style={styles.saveBtnText}>SAVE INJURY MARKER</Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -382,31 +418,32 @@ export default function BodyDiagramScreen() {
               {activeMarkedPart && (
                 <>
                   {activeMarkedPart.howItHappened && (
-                    <DetailRow label="How it happened" value={activeMarkedPart.howItHappened} borderColor={borderColor} />
+                    <DetailRow label="HOW IT HAPPENED" value={activeMarkedPart.howItHappened} />
                   )}
                   {activeMarkedPart.dateOfInjury && (
-                    <DetailRow label="Date of Injury" value={activeMarkedPart.dateOfInjury} borderColor={borderColor} />
+                    <DetailRow label="DATE OF INJURY" value={activeMarkedPart.dateOfInjury} />
                   )}
                   {activeMarkedPart.doctorDiagnosis && (
-                    <DetailRow label="Doctor's Diagnosis" value={activeMarkedPart.doctorDiagnosis} borderColor={borderColor} />
+                    <DetailRow label="DOCTOR DIAGNOSIS" value={activeMarkedPart.doctorDiagnosis} />
                   )}
                   {activeMarkedPart.initialSymptoms && (
-                    <DetailRow label="Initial Symptoms" value={activeMarkedPart.initialSymptoms} borderColor={borderColor} />
+                    <DetailRow label="INITIAL SYMPTOMS" value={activeMarkedPart.initialSymptoms} />
                   )}
                   {!activeMarkedPart.howItHappened &&
                     !activeMarkedPart.dateOfInjury &&
                     !activeMarkedPart.doctorDiagnosis &&
                     !activeMarkedPart.initialSymptoms && (
-                      <ThemedText style={[styles.noDetails, { color: colors.icon }]}>
-                        No additional details were recorded.
-                      </ThemedText>
+                      <Text style={styles.noDetails}>
+                        // NO ADDITIONAL DETAILS RECORDED
+                      </Text>
                     )}
                   <TouchableOpacity
-                    style={[styles.clearBtn, { borderColor: '#EF4444' }]}
+                    style={styles.clearBtn}
                     onPress={handleClear}
                     activeOpacity={0.8}
                   >
-                    <ThemedText style={styles.clearBtnText}>Clear Injury</ThemedText>
+                    <Ionicons name="trash-outline" size={15} color="#EF4444" />
+                    <Text style={styles.clearBtnText}>CLEAR INJURY</Text>
                   </TouchableOpacity>
                 </>
               )}
@@ -414,138 +451,466 @@ export default function BodyDiagramScreen() {
           )}
         </BottomSheetScrollView>
       </BottomSheet>
-    </ThemedView>
+    </SafeAreaView>
   );
 }
 
-function DetailRow({ label, value, borderColor }: { label: string; value: string; borderColor: string }) {
+function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <View style={[styles.detailRow, { borderBottomColor: borderColor }]}>
-      <ThemedText style={styles.detailLabel}>{label}</ThemedText>
-      <ThemedText style={styles.detailValue}>{value}</ThemedText>
+    <View style={styles.detailRow}>
+      <View style={styles.detailLabelRow}>
+        <View style={styles.detailLabelDash} />
+        <Text style={styles.detailLabel}>{label}</Text>
+      </View>
+      <Text style={styles.detailValue}>{value}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scroll: { padding: 24, paddingTop: 60, paddingBottom: 48 },
-  heading: { marginBottom: 6 },
-  subtitle: { fontSize: 14, marginBottom: 20, lineHeight: 20 },
+  safe: {
+    flex: 1,
+    backgroundColor: HUD.bg,
+  },
+  scroll: {
+    backgroundColor: HUD.bg,
+  },
+  content: {
+    padding: 16,
+    paddingBottom: 48,
+  },
 
+  // Header
+  header: {
+    marginBottom: 20,
+    overflow: 'hidden',
+  },
+  headerAccentLine: {
+    height: 1,
+    backgroundColor: HUD.cyan,
+    opacity: 0.3,
+    marginBottom: 14,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  headerTitleCol: {
+    gap: 4,
+  },
+  heading: {
+    fontFamily: HUD.mono,
+    fontSize: 20,
+    fontWeight: '700',
+    color: HUD.cyan,
+    letterSpacing: 3,
+  },
+  subtitle: {
+    fontFamily: HUD.mono,
+    fontSize: 9,
+    color: HUD.muted,
+    letterSpacing: 1.5,
+  },
+  headerBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: `${HUD.cyan}40`,
+    backgroundColor: `${HUD.cyan}10`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Toggle
   toggleRow: {
     flexDirection: 'row',
-    borderRadius: 10,
+    backgroundColor: HUD.cardBg,
+    borderWidth: 1,
+    borderColor: HUD.border,
+    borderRadius: 4,
     padding: 3,
-    marginBottom: 8,
+    marginBottom: 12,
     alignSelf: 'center',
-    width: 200,
+    width: 220,
+    overflow: 'hidden',
   },
   toggleBtn: {
     flex: 1,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: 3,
     alignItems: 'center',
+    overflow: 'hidden',
   },
-  toggleLabel: { fontSize: 14, fontWeight: '500', opacity: 0.5 },
-  toggleLabelActive: { color: '#fff', opacity: 1 },
+  toggleBtnActive: {
+    backgroundColor: `${HUD.cyan}18`,
+  },
+  toggleActiveLine: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1.5,
+    backgroundColor: HUD.cyan,
+    opacity: 0.9,
+  },
+  toggleLabel: {
+    fontFamily: HUD.mono,
+    fontSize: 11,
+    color: HUD.muted,
+    letterSpacing: 2,
+  },
+  toggleLabelActive: {
+    color: HUD.cyan,
+    fontWeight: '700',
+  },
 
-  bodyContainer: { alignItems: 'center', marginVertical: 12 },
+  // Body diagram
+  bodyContainer: {
+    alignItems: 'center',
+    marginVertical: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    backgroundColor: HUD.cardBg,
+    borderWidth: 1,
+    borderColor: HUD.border,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  cornerH: {
+    position: 'absolute',
+    width: 18,
+    height: 1.5,
+    opacity: 0.7,
+  },
+  cornerV: {
+    position: 'absolute',
+    width: 1.5,
+    height: 18,
+    opacity: 0.7,
+  },
 
+  // Legend
   legend: {
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 20,
-    marginTop: 8,
-    marginBottom: 24,
+    marginTop: 14,
+    marginBottom: 20,
   },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  legendDot: { width: 10, height: 10, borderRadius: 5 },
-  legendLabel: { fontSize: 13, opacity: 0.8 },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  legendLabel: {
+    fontFamily: HUD.mono,
+    fontSize: 9,
+    letterSpacing: 1,
+  },
 
-  partsList: { marginTop: 4 },
-  partsHeader: { marginBottom: 12, fontSize: 16 },
+  // Marked parts list
+  partsList: {
+    marginTop: 4,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  sectionLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: HUD.cyan,
+    opacity: 0.2,
+  },
+  sectionTitle: {
+    fontFamily: HUD.mono,
+    fontSize: 8,
+    color: HUD.muted,
+    letterSpacing: 2,
+  },
   partRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: HUD.cardBg,
+    borderWidth: 1,
+    borderColor: HUD.border,
+    borderRadius: 4,
+    paddingHorizontal: 12,
     paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 10,
+    marginBottom: 6,
+    overflow: 'hidden',
   },
-  statusDot: { width: 10, height: 10, borderRadius: 5 },
-  partName: { flex: 1, fontSize: 15, textTransform: 'capitalize' },
-  partStatus: { fontSize: 13, fontWeight: '500' },
-  chevron: { fontSize: 18 },
-  clearAllBtn: { marginTop: 16, alignItems: 'center', paddingVertical: 10 },
-  clearAllText: { fontSize: 14, fontWeight: '500', color: '#EF4444' },
-
-  // Bottom sheet
-  sheetContent: { padding: 24, paddingBottom: 48 },
-  sheetHeader: {
+  partRowAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 2,
+    opacity: 0.7,
+  },
+  partDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  partName: {
+    flex: 1,
+    fontFamily: HUD.mono,
+    fontSize: 11,
+    color: HUD.text,
+    letterSpacing: 1,
+  },
+  partStatus: {
+    fontFamily: HUD.mono,
+    fontSize: 9,
+    letterSpacing: 1,
+  },
+  clearAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#EF444440',
+    borderRadius: 4,
+  },
+  clearAllText: {
+    fontFamily: HUD.mono,
+    fontSize: 10,
+    color: '#EF4444',
+    letterSpacing: 1.5,
+  },
+
+  // Bottom sheet
+  sheetContent: {
+    padding: 24,
+    paddingBottom: 48,
+  },
+  sheetTopAccent: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: HUD.cyan,
+    opacity: 0.3,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     marginBottom: 20,
     gap: 12,
   },
-  sheetTitle: { fontSize: 22, fontWeight: 'bold', flex: 1 },
-  statusBadge: {
+  sheetTitleCol: {
+    flex: 1,
+    gap: 6,
+  },
+  sheetTitle: {
+    fontFamily: HUD.mono,
+    fontSize: 18,
+    fontWeight: '700',
+    color: HUD.text,
+    letterSpacing: 2,
+  },
+  sheetSubRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-    borderWidth: 1,
-    gap: 5,
+    gap: 6,
   },
-  badgeDot: { width: 7, height: 7, borderRadius: 4 },
-  badgeText: { fontSize: 13, fontWeight: '600' },
+  sheetSubDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  sheetSubText: {
+    fontFamily: HUD.mono,
+    fontSize: 10,
+    letterSpacing: 1,
+  },
+  sheetAddBadge: {
+    borderWidth: 1,
+    borderColor: `${HUD.cyan}50`,
+    borderRadius: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: `${HUD.cyan}10`,
+  },
+  sheetAddBadgeText: {
+    fontFamily: HUD.mono,
+    fontSize: 9,
+    color: HUD.cyan,
+    letterSpacing: 1,
+  },
 
-  statusRow: { flexDirection: 'row', gap: 8, marginBottom: 20, flexWrap: 'wrap' },
+  fieldLabel: {
+    fontFamily: HUD.mono,
+    fontSize: 9,
+    color: HUD.muted,
+    letterSpacing: 2,
+    marginBottom: 8,
+  },
+
+  statusRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 20,
+    flexWrap: 'wrap',
+  },
   statusChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 20,
-    borderWidth: 1.5,
-  },
-  statusChipText: { fontSize: 14, fontWeight: '500' },
-  statusChipTextActive: { color: '#fff' },
-
-  divider: { height: StyleSheet.hairlineWidth, marginBottom: 16 },
-  optionalNote: { fontSize: 12, marginBottom: 16, fontStyle: 'italic' },
-  fieldLabel: { marginBottom: 8, fontSize: 14 },
-  input: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 4,
     borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
+  },
+  statusChipDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusChipText: {
+    fontFamily: HUD.mono,
+    fontSize: 10,
+    letterSpacing: 1,
+  },
+
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: HUD.border,
     marginBottom: 16,
   },
-  multiline: { minHeight: 80, paddingTop: 12 },
+  optionalNote: {
+    fontFamily: HUD.mono,
+    fontSize: 9,
+    color: HUD.muted,
+    letterSpacing: 1,
+    marginBottom: 16,
+    opacity: 0.7,
+  },
+
+  input: {
+    borderWidth: 1,
+    borderColor: HUD.border,
+    borderRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    marginBottom: 16,
+    backgroundColor: '#0d1623',
+    color: HUD.text,
+    fontFamily: HUD.mono,
+  },
+  multiline: {
+    minHeight: 80,
+    paddingTop: 10,
+  },
+
   saveBtn: {
-    borderRadius: 12,
-    paddingVertical: 15,
+    borderWidth: 1,
+    borderColor: HUD.cyan,
+    borderRadius: 4,
+    paddingVertical: 14,
     alignItems: 'center',
     marginTop: 8,
+    backgroundColor: `${HUD.cyan}18`,
+    overflow: 'hidden',
   },
-  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  saveBtnAccentTL: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 16,
+    height: 1.5,
+    backgroundColor: HUD.cyan,
+    opacity: 0.8,
+  },
+  saveBtnAccentBR: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 16,
+    height: 1.5,
+    backgroundColor: HUD.cyan,
+    opacity: 0.8,
+  },
+  saveBtnText: {
+    fontFamily: HUD.mono,
+    color: HUD.cyan,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 2,
+  },
 
   // View mode
   detailRow: {
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 4,
-  },
-  detailLabel: { fontSize: 12, opacity: 0.5, textTransform: 'uppercase', letterSpacing: 0.5 },
-  detailValue: { fontSize: 15, lineHeight: 22 },
-  noDetails: { fontSize: 14, fontStyle: 'italic', marginVertical: 16 },
-  clearBtn: {
-    borderWidth: 1.5,
-    borderRadius: 12,
     paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 20,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: HUD.border,
+    gap: 6,
   },
-  clearBtnText: { color: '#EF4444', fontSize: 15, fontWeight: '600' },
+  detailLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  detailLabelDash: {
+    width: 12,
+    height: 1,
+    backgroundColor: HUD.cyan,
+    opacity: 0.5,
+  },
+  detailLabel: {
+    fontFamily: HUD.mono,
+    fontSize: 9,
+    color: HUD.muted,
+    letterSpacing: 1.5,
+  },
+  detailValue: {
+    fontFamily: HUD.mono,
+    fontSize: 13,
+    color: HUD.text,
+    lineHeight: 20,
+  },
+  noDetails: {
+    fontFamily: HUD.mono,
+    fontSize: 11,
+    color: HUD.muted,
+    marginVertical: 16,
+    letterSpacing: 1,
+    opacity: 0.7,
+  },
+  clearBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#EF444450',
+    borderRadius: 4,
+    paddingVertical: 14,
+    marginTop: 20,
+    backgroundColor: '#EF444410',
+  },
+  clearBtnText: {
+    fontFamily: HUD.mono,
+    color: '#EF4444',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 2,
+  },
 });

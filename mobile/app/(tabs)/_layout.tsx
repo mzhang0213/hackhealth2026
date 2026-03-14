@@ -77,7 +77,9 @@ export default function TabLayout() {
         name="injury"
         options={{
           title: 'INJURY',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="bandage.fill" color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name="body-outline" color={color} focused={focused} />
+          ),
         }}
       />
       <Tabs.Screen
