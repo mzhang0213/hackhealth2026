@@ -616,6 +616,24 @@ export default function DashboardScreen() {
           <StatsCards />
         </View>
 
+        {/* Exercise tracker */}
+        <HudPanel
+            title="REHAB PROTOCOL"
+            subtitle="DAILY EXERCISE QUEUE"
+            style={{ marginBottom: 16 }}
+        >
+          <ExerciseTracker />
+        </HudPanel>
+
+        {/* Pain check-in */}
+        <HudPanel
+            title="DAILY DIAGNOSTIC"
+            subtitle="SYMPTOM & PAIN INPUT"
+            style={{ marginBottom: 24 }}
+        >
+          <PainCheckin />
+        </HudPanel>
+
         {/* Body Map */}
         <HudPanel
           title="BIOMETRIC SCANNER"
@@ -632,24 +650,6 @@ export default function DashboardScreen() {
           style={{ marginBottom: 16 }}
         >
           <RecoveryChart />
-        </HudPanel>
-
-        {/* Exercise tracker */}
-        <HudPanel
-          title="REHAB PROTOCOL"
-          subtitle="DAILY EXERCISE QUEUE"
-          style={{ marginBottom: 16 }}
-        >
-          <ExerciseTracker />
-        </HudPanel>
-
-        {/* Pain check-in */}
-        <HudPanel
-          title="DAILY DIAGNOSTIC"
-          subtitle="SYMPTOM & PAIN INPUT"
-          style={{ marginBottom: 24 }}
-        >
-          <PainCheckin />
         </HudPanel>
 
         {/* Quick access separator */}
