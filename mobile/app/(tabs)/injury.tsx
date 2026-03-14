@@ -48,7 +48,7 @@ function formatSlug(slug: string) {
     .join(' ');
 }
 
-export default function BodyDiagramScreen() {
+export default function InjuryScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const isDark = colorScheme === 'dark';
@@ -157,14 +157,12 @@ export default function BodyDiagramScreen() {
     []
   );
 
-  const bodyData: ExtendedBodyPart[] = useMemo(() =>
-    Object.values(markedParts).map((p) => ({
-      slug: p.slug,
-      side: p.side,
-      color: STATUS_COLORS[p.status],
-      intensity: 1,
-    })),
-  [markedParts]);
+  const bodyData: ExtendedBodyPart[] = Object.values(markedParts).map((p) => ({
+    slug: p.slug,
+    side: p.side,
+    color: STATUS_COLORS[p.status],
+    intensity: 1,
+  }));
 
   const markedCount = Object.keys(markedParts).length;
   const activeKey = activePart ? makeKey(activePart.slug, activePart.side) : null;
