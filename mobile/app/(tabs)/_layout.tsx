@@ -67,9 +67,18 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'DASH',
+          title: 'HOME',
           tabBarIcon: ({ color, focused }) => (
-            <TabIcon name="grid-outline" color={color} focused={focused} />
+            <TabIcon name="home-outline" color={color} focused={focused} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="exercises"
+        options={{
+          title: 'EXERCISES',
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name="barbell-outline" color={color} focused={focused} />
           ),
         }}
       />
@@ -83,26 +92,21 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="report"
+        name="explore"
         options={{
-          title: 'REHAB',
+          title: 'EXPLORE',
           tabBarIcon: ({ color, focused }) => (
-            <TabIcon name="barbell-outline" color={color} focused={focused} />
+            <TabIcon name="compass-outline" color={color} focused={focused} />
           ),
         }}
       />
       <Tabs.Screen
-        name="progress"
+        name="profile"
         options={{
-          title: 'Progress',
-          // tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="exercises"
-        options={{
-          title: 'Exercises',
-          // tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: 'PROFILE',
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name="person-outline" color={color} focused={focused} />
+          ),
         }}
       />
     </Tabs>

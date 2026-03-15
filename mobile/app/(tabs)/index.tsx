@@ -469,7 +469,7 @@ function BodyMapContent({ bodyParts }: { bodyParts: Record<string, MarkedPart> }
 
   return (
     <TouchableOpacity
-      onPress={() => router.push('/body-diagram')}
+      onPress={() => router.push('/(tabs)/injury')}
       activeOpacity={0.75}
       style={bodyStyles.button}
     >
@@ -633,50 +633,41 @@ export default function DashboardScreen() {
           <PainCheckin />
         </HudPanel>
 
-        {/* Body Map */}
-        <HudPanel
-          title="BIOMETRIC SCANNER"
-          subtitle="TAP MARKERS FOR DIAGNOSTICS"
-          style={{ marginBottom: 16 }}
-        >
-          <BodyMapContent bodyParts={bodyParts} />
-        </HudPanel>
-
-        {/* Recovery chart */}
-        <HudPanel
-          title="RECOVERY ANALYTICS"
-          subtitle="TRACKING: PAIN | MOBILITY | STRENGTH"
-          style={{ marginBottom: 16 }}
-        >
-          <RecoveryChart />
-        </HudPanel>
+        {/*/!* Body Map *!/*/}
+        {/*<HudPanel*/}
+        {/*  title="BIOMETRIC SCANNER"*/}
+        {/*  subtitle="TAP MARKERS FOR DIAGNOSTICS"*/}
+        {/*  style={{ marginBottom: 16 }}*/}
+        {/*>*/}
+        {/*  <BodyMapContent bodyParts={bodyParts} />*/}
+        {/*</HudPanel>*/}
 
         {/* Quick access separator */}
         <View style={{ marginBottom: 16 }}>
           <HudSeparator label="QUICK ACCESS" />
         </View>
 
-        {/* Quick actions */}
-        <View style={{ marginBottom: 24 }}>
-          <QuickActionCard
-            icon="camera-outline"
-            color={HUD.cyan}
-            title="PHOTO TIMELINE"
-            subtitle="VISUAL RECOVERY DOCUMENTATION"
-          />
-          <QuickActionCard
-            icon="location-outline"
-            color={HUD.success}
-            title="PT LOCATOR"
-            subtitle="FIND SPECIALISTS NEARBY"
-          />
-          <QuickActionCard
-            icon="scan-outline"
-            color={HUD.warning}
-            title="ROM ANALYSIS"
-            subtitle="AI-POWERED MOVEMENT SCAN"
-          />
-        </View>
+        {/*/!* Quick actions *!/*/}
+        {/*<View style={{ marginBottom: 24 }}>*/}
+        {/*  <QuickActionCard*/}
+        {/*    icon="camera-outline"*/}
+        {/*    color={HUD.cyan}*/}
+        {/*    title="PHOTO TIMELINE"*/}
+        {/*    subtitle="VISUAL RECOVERY DOCUMENTATION"*/}
+        {/*  />*/}
+        {/*  <QuickActionCard*/}
+        {/*    icon="location-outline"*/}
+        {/*    color={HUD.success}*/}
+        {/*    title="PT LOCATOR"*/}
+        {/*    subtitle="FIND SPECIALISTS NEARBY"*/}
+        {/*  />*/}
+        {/*  <QuickActionCard*/}
+        {/*    icon="scan-outline"*/}
+        {/*    color={HUD.warning}*/}
+        {/*    title="ROM ANALYSIS"*/}
+        {/*    subtitle="AI-POWERED MOVEMENT SCAN"*/}
+        {/*  />*/}
+        {/*</View>*/}
 
         {/* AI Banner */}
         <View style={{ marginBottom: 24 }}>
