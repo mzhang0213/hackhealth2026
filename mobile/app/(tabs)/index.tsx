@@ -33,8 +33,6 @@ export default function App() {
   const [streamUrl, setStreamUrl] = useState("http://localhost:5001/video_feed");
   const [scanTimer, setScanTimer] = useState(null);
   const timerRef = useRef(null);
-  
-  // NEW: State to hold the AI Report and Graph Data!
   const [scanResult, setScanResult] = useState(null);
 
   useEffect(() => { fetchInjuries(); }, []);
@@ -98,7 +96,6 @@ export default function App() {
     timerRef.current = setInterval(() => {
       timeLeft -= 1;
       setScanTimer(timeLeft);
-      
       if (timeLeft <= 0) {
         clearInterval(timerRef.current);
         setScanTimer(null);
@@ -110,17 +107,35 @@ export default function App() {
   const runAIScan = async () => {
     setCameraActive(false); 
     try {
+      const { data: pastScans } = await supabase
+        .from('mobility_scans')
+        .select('max_rom')
+        .eq('muscle', activeMuscle)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      let previousRom = null;
+      if (pastScans && pastScans.length > 0) {
+        previousRom = pastScans[0].max_rom;
+      }
+
       const response = await fetch('http://localhost:5001/analyze-range', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ muscle: activeMuscle })
+        body: JSON.stringify({ 
+            muscle: activeMuscle,
+            previous_rom: previousRom 
+        })
       });
       const data = await response.json();
       
-      // OPTIMIZATION: Instead of an alert, we load the Dashboard!
+      await supabase.from('mobility_scans').insert([
+        { muscle: activeMuscle, max_rom: data.angle }
+      ]);
+
       setScanResult(data);
     } catch (err) {
-      alert("AI Server Offline. Ensure python server.py is running on port 5001.");
+      alert("AI Server Offline or Error: " + err.message);
     }
   };
 
@@ -203,36 +218,49 @@ export default function App() {
 
       </ScrollView>
 
-      {/* NEW: THE AI TELEMETRY DASHBOARD MODAL */}
+      {/* THE AI TELEMETRY DASHBOARD MODAL */}
       <Modal animationType="fade" transparent visible={!!scanResult}>
         <View style={styles.modalBg}>
           <View style={[styles.modalBody, {height: '85%'}]}>
             <Text style={styles.modalTitle}>// AI_CLINICAL_REPORT: {scanResult?.muscle}</Text>
             
             <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
-              <Text style={{color: '#fff', fontSize: 22, fontWeight: '900'}}>PEAK ROM: {scanResult?.angle}°</Text>
+              <View>
+                <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 4}}>
+                  <Text style={{color: '#fff', fontSize: 22, fontWeight: '900'}}>PEAK ROM: {scanResult?.angle}°</Text>
+                  
+                  {scanResult?.peak_delta !== undefined && scanResult?.peak_delta !== 0 && (
+                    <View style={{
+                      backgroundColor: scanResult.peak_delta > 0 ? 'rgba(74, 222, 128, 0.2)' : 'rgba(239, 68, 68, 0.2)', 
+                      paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12, marginLeft: 10
+                    }}>
+                      <Text style={{color: scanResult.peak_delta > 0 ? '#4ade80' : '#ef4444', fontSize: 14, fontWeight: 'bold'}}>
+                        {scanResult.peak_delta > 0 ? '▲ +' : '▼ '}{scanResult.peak_delta}°
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                
+                <Text style={{color: '#38bdf8', fontSize: 14, fontWeight: 'bold'}}>AVG ROM: {scanResult?.average_angle}°</Text>
+              </View>
               <Text style={{color: '#64748b', fontSize: 10}}>SAMPLES: {scanResult?.data_points}</Text>
             </View>
 
-            {/* THE DYNAMIC BAR CHART */}
             <Text style={[styles.sectionTitle, {fontSize: 12, marginTop: 20}]}>// RAW_TELEMETRY_DATA</Text>
             <View style={styles.chartContainer}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{alignItems: 'flex-end', paddingHorizontal: 10}}>
                 {scanResult?.raw_data?.map((val, idx) => (
                   <View key={idx} style={{
-                    width: 4,
-                    height: (val / 180) * 130, // Math to keep the bars fitting inside the box
-                    backgroundColor: val === scanResult?.angle ? '#ef4444' : '#06b6d4', // Highlights the Peak Angle in Red!
-                    marginHorizontal: 1,
-                    borderTopLeftRadius: 2,
-                    borderTopRightRadius: 2,
+                    width: 4, height: (val / 180) * 130, 
+                    backgroundColor: val === scanResult?.angle ? '#ef4444' : '#06b6d4', 
+                    marginHorizontal: 1, borderTopLeftRadius: 2, borderTopRightRadius: 2,
                   }} />
                 ))}
               </ScrollView>
             </View>
             <Text style={{color: '#475569', fontSize: 10, textAlign: 'center', marginTop: 5, marginBottom: 15}}>FILE ARCHIVED: {scanResult?.filename}</Text>
 
-            <Text style={{color: '#94a3b8', lineHeight: 22}}>{scanResult?.message}</Text>
+            <Text style={{color: '#94a3b8', lineHeight: 22, fontWeight: 'bold'}}>{scanResult?.message}</Text>
 
             <TouchableOpacity style={[styles.modalSave, {marginTop: 'auto'}]} onPress={() => setScanResult(null)}>
               <Text style={styles.saveText}>ACKNOWLEDGE & CLOSE</Text>
@@ -244,12 +272,13 @@ export default function App() {
       {/* THE LIVE YOLO CAMERA MODAL */}
       <Modal animationType="slide" transparent visible={cameraActive}>
         <View style={styles.modalBg}>
-          <View style={[styles.modalBody, {height: '75%'}]}>
+          <View style={[styles.modalBody, {height: '95%'}]}>
             <Text style={styles.modalTitle}>// LIVE_YOLO_FEED: {activeMuscle}</Text>
             
-            <View style={styles.viewfinder}>
+            <View style={[styles.viewfinder, { flex: 1, height: 'auto', marginBottom: 20, backgroundColor: '#000' }]}>
+              {/* THE FIX: objectFit is now 'contain' so nothing gets cropped out! */}
               {cameraActive && (
-                <img src={streamUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="AI Vision Stream" />
+                <img src={streamUrl} style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' }} alt="AI Vision Stream" />
               )}
             </View>
             
