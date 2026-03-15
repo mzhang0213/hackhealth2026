@@ -15,17 +15,7 @@ import {
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
-
-export const INJURY_PROFILE_KEY = 'injury_profile';
-
-export type InjuryProfile = {
-  howItHappened: string;
-  sportActivity: string;
-  dateOfInjury: string;
-  doctorDiagnosis: string;
-  initialSymptoms: string;
-  savedAt: string;
-};
+import { INJURY_PROFILE_KEY, type InjuryProfile } from '@/constants/injury-store';
 
 export default function InjuryReportScreen() {
   const colorScheme = useColorScheme() ?? 'light';
