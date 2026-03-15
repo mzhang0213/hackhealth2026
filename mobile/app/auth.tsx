@@ -264,7 +264,7 @@ export default function AuthScreen() {
               placeholder="operator@email.com"
             />
             <Field
-              label="ACCESS CODE"
+              label="PASSWORD"
               value={password}
               onChange={setPassword}
               placeholder="••••••••••"
@@ -272,7 +272,7 @@ export default function AuthScreen() {
             />
             {mode === 'register' && (
               <Field
-                label="CONFIRM ACCESS CODE"
+                label="CONFIRM PASSWORD"
                 value={confirm}
                 onChange={setConfirm}
                 placeholder="••••••••••"

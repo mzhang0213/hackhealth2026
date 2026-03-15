@@ -1,5 +1,3 @@
-export const USER_ID_KEY = 'rebound_user_id';
-
 export type UserProfile = {
   id: string;
   name: string;

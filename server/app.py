@@ -1,11 +1,15 @@
-import json
 import os
 import pickle
+import random
+import ssl
+import certifi
+import urllib.parse
+import urllib.request
+import json as _json
 from dotenv import load_dotenv
 load_dotenv()
 import threading
 import time
-import uuid
 import warnings
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -15,8 +19,7 @@ from supabase import create_client, Client
 
 import cv2 as cv
 import numpy as np
-import google as genai
-import jwt as pyjwt
+import google.generativeai as genai
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -40,15 +43,14 @@ app.add_middleware(
 
 SERVER_DIR = os.path.dirname(__file__)
 CV_DIR     = os.path.join(SERVER_DIR, "Computer_vision")
-DB_FILE    = os.path.join(SERVER_DIR, "db.json")
 
 # ── Load CV models ────────────────────────────────────────────────────────────
 
 with open(os.path.join(CV_DIR, "clinical_ai_model.pkl"), "rb") as f:
     clinical_model = pickle.load(f)
 
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-llm = genai.GenerativeModel("gemini-pro")
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY", ""))
+llm = genai.GenerativeModel("gemini-2.5-flash")
 
 # ── Supabase ──────────────────────────────────────────────────────────────────
 
@@ -57,23 +59,15 @@ supabase: Client = create_client(
     os.environ["SUPABASE_KEY"],
 )
 
-SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
-
-
 def verify_token(authorization: str = Header(default="")) -> str:
-    """Verify Supabase JWT and return the user's UUID (sub claim)."""
+    """Verify a Supabase JWT via the Supabase Auth API and return the user's UUID."""
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
-    token = authorization.removeprefix("Bearer ")
+    token = authorization.removeprefix("Bearer ").strip()
     try:
-        payload = pyjwt.decode(
-            token,
-            SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
-        return str(payload["sub"])
-    except pyjwt.PyJWTError as exc:
+        response = supabase.auth.get_user(token)
+        return str(response.user.id)
+    except Exception as exc:
         raise HTTPException(status_code=401, detail=f"Invalid token: {exc}")
 
 pose_model = YOLO(os.path.join(CV_DIR, "yolov8m-pose.pt"))
@@ -202,19 +196,7 @@ def _generate_frames():
         yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
 
 
-# ── User DB helpers ───────────────────────────────────────────────────────────
-
-def load_db() -> dict:
-    if not os.path.exists(DB_FILE):
-        return {"users": {}}
-    with open(DB_FILE) as f:
-        return json.load(f)
-
-
-def save_db(data: dict):
-    with open(DB_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-
+# ── User helpers ──────────────────────────────────────────────────────────────
 
 def compute_recovery_day(injury_date_str: str) -> int:
     try:
@@ -224,13 +206,25 @@ def compute_recovery_day(injury_date_str: str) -> int:
 
 
 def build_profile(raw: dict) -> "UserProfile":
-    return UserProfile(**raw, recovery_day=compute_recovery_day(raw["injury_date"]))
+    """Build a UserProfile from a Supabase users row (supabase_id → id)."""
+    profile_id = raw.get("supabase_id") or raw.get("id", "")
+    return UserProfile(
+        id=profile_id,
+        name=raw.get("name", ""),
+        sport=raw.get("sport", ""),
+        injury_description=raw.get("injury_description", ""),
+        injury_date=raw.get("injury_date", ""),
+        doctor_diagnosis=raw.get("doctor_diagnosis", ""),
+        pt_name=raw.get("pt_name", ""),
+        created_at=raw.get("created_at") or datetime.utcnow().isoformat(),
+        recovery_day=compute_recovery_day(raw.get("injury_date", "")),
+    )
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
 class UserCreate(BaseModel):
-    id: Optional[str] = None   # Supabase user.id — if omitted a UUID is generated
+    supabase_id: str
     name: str
     sport: str
     injury_description: str
@@ -239,8 +233,14 @@ class UserCreate(BaseModel):
     pt_name: Optional[str] = ""
 
 
-class UserProfile(UserCreate):
+class UserProfile(BaseModel):
     id: str
+    name: str
+    sport: str
+    injury_description: str
+    injury_date: str
+    doctor_diagnosis: str
+    pt_name: str
     created_at: str
     recovery_day: int
 
@@ -264,6 +264,16 @@ class CheckinCreate(BaseModel):
     symptoms: list[str] = []
 
 
+class InjuryMarkerCreate(BaseModel):
+    slug: str
+    side: Optional[str] = None          # 'left' | 'right' | null
+    status: str                         # 'pain' | 'moderate' | 'recovering'
+    how_it_happened: Optional[str] = None
+    date_of_injury: Optional[str] = None
+    doctor_diagnosis: Optional[str] = None
+    initial_symptoms: Optional[str] = None
+
+
 # ── Routes: general ───────────────────────────────────────────────────────────
 
 @app.get("/")
@@ -271,38 +281,83 @@ def root():
     return {"status": "ok", "service": "rebound-api"}
 
 
+@app.get("/health")
+def health():
+    checks: dict[str, str] = {}
+
+    # Supabase
+    try:
+        supabase.table("users").select("supabase_id").limit(1).execute()
+        checks["supabase"] = "ok"
+    except Exception as e:
+        checks["supabase"] = f"error: {e}"
+
+    # Gemini
+    try:
+        _ = llm.model_name
+        checks["gemini"] = "ok"
+    except Exception as e:
+        checks["gemini"] = f"error: {e}"
+
+    # CV model
+    try:
+        _ = clinical_model
+        checks["cv_model"] = "ok"
+    except Exception as e:
+        checks["cv_model"] = f"error: {e}"
+
+    overall = "ok" if all(v == "ok" for v in checks.values()) else "degraded"
+    return {"status": overall, "checks": checks}
+
+
 # ── Routes: users ─────────────────────────────────────────────────────────────
 
 @app.post("/users", response_model=UserProfile, status_code=201)
-def create_user(payload: UserCreate):
-    db = load_db()
-    user_id = payload.id or str(uuid.uuid4())
-    data = {k: v for k, v in payload.model_dump().items() if k != "id"}
-    raw = {"id": user_id, "created_at": datetime.utcnow().isoformat(), **data}
-    db["users"][user_id] = raw
-    save_db(db)
-    return build_profile(raw)
+def create_user(payload: UserCreate, _uid: str = Depends(verify_token)):
+    row = {
+        #postgrest.exceptions.APIError: {'message': 'null value in column "user_id" of relation "users" violates not-null constraint', 'code': '23502', 'hint': None, 'details': 'Failing row contains (null, Phillips Le, null, null, null, null, 956a5ce6-a95c-4ce9-b040-3856cbbd46cc, Football, ACL, 2026-01-01, ACL, Dr. Lee, 2026-03-15 15:57:24.560509+00).'}
+
+        "user_id": int(random.random()*99999),
+        "name": payload.name,
+        "supabase_id": payload.supabase_id,
+        "sport": payload.sport,
+        "injury_description": payload.injury_description,
+        "injury_date": payload.injury_date,
+        "doctor_diagnosis": payload.doctor_diagnosis or "",
+        "pt_name": payload.pt_name or "",
+    }
+    res = supabase.table("users").upsert(row, on_conflict="supabase_id").execute()
+    return build_profile(res.data[0])
 
 
 @app.get("/users/{user_id}", response_model=UserProfile)
-def get_user(user_id: str):
-    db = load_db()
-    raw = db["users"].get(user_id)
-    if not raw:
+def get_user(user_id: str, _uid: str = Depends(verify_token)):
+    res = (
+        supabase.table("users")
+        .select("*")
+        .eq("supabase_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    if not res.data:
         raise HTTPException(status_code=404, detail="User not found")
-    return build_profile(raw)
+    return build_profile(res.data[0])
 
 
 @app.patch("/users/{user_id}", response_model=UserProfile)
-def update_user(user_id: str, payload: UserUpdate):
-    db = load_db()
-    raw = db["users"].get(user_id)
-    if not raw:
+def update_user(user_id: str, payload: UserUpdate, _uid: str = Depends(verify_token)):
+    updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    res = (
+        supabase.table("users")
+        .update(updates)
+        .eq("supabase_id", user_id)
+        .execute()
+    )
+    if not res.data:
         raise HTTPException(status_code=404, detail="User not found")
-    raw.update({k: v for k, v in payload.model_dump().items() if v is not None})
-    db["users"][user_id] = raw
-    save_db(db)
-    return build_profile(raw)
+    return build_profile(res.data[0])
 
 
 # ── Routes: computer vision / ROM ─────────────────────────────────────────────
@@ -325,7 +380,7 @@ def start_scan():
 
 
 @app.post("/analyze-range")
-def analyze_range(payload: AnalyzeRangeRequest):
+def analyze_range(payload: AnalyzeRangeRequest, authorization: str = Header(default="")):
     """
     Stop the scan, run ML classification, generate Gemini AI report,
     and save the session JSON to Computer_vision/.
@@ -346,30 +401,41 @@ def analyze_range(payload: AnalyzeRangeRequest):
 
     try:
         prompt = (
-            f"AI Assistant report for {payload.muscle}. "
-            f"Prev Peak: {previous_rom}°, Current Peak: {final_angle}°, "
-            f"Average Sustained ROM: {average_angle}°, ML Status: {ml_status}. "
-            f"Suggest protocol."
+            f"As a physical therapy AI, analyze this {payload.muscle} data: "
+            f"Previous Peak: {previous_rom} degrees, Current Peak: {final_angle} degrees, "
+            f"Average ROM during session: {average_angle} degrees. "
+            f"Status: {ml_status}. Provide a 2-sentence recovery protocol."
         )
         ai_msg = llm.generate_content(prompt).text
-    except Exception:
+    except Exception as e:
+        print(f"GEMINI ERROR: {e}")
         ai_msg = f"{emoji} AI CLINICAL ASSISTANT: {ml_status}\nSuggested Protocol: Review data manually."
 
-    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"patient_data_{payload.muscle}_{timestamp_str}.json"
-    session_data = {
-        "timestamp": str(datetime.now()),
-        "muscle": payload.muscle,
-        "joint_key": joint_key,
-        "max_rom": final_angle,
-        "average_rom": average_angle,
-        "previous_rom": previous_rom,
-        "peak_delta": peak_delta,
-        "ml_classification": int(prediction),
-        "raw_angle_data": history,
-    }
-    with open(os.path.join(CV_DIR, filename), "w") as f:
-        json.dump(session_data, f, indent=4)
+    # Save to Supabase mobility_scans if authenticated
+    auth_user_id = None
+    if authorization.startswith("Bearer "):
+        try:
+            token = authorization.removeprefix("Bearer ").strip()
+            auth_user_id = str(supabase.auth.get_user(token).user.id)
+        except Exception:
+            pass
+
+    if auth_user_id:
+        try:
+            supabase.table("mobility_scans").insert({
+                "supabase_user_id": auth_user_id,
+                "muscle": payload.muscle,
+                "joint_key": joint_key,
+                "max_rom": float(final_angle),
+                "average_rom": float(average_angle),
+                "previous_rom": float(previous_rom),
+                "peak_delta": float(peak_delta),
+                "ml_classification": int(prediction),
+                "ml_status": ml_status,
+                "ai_message": ai_msg,
+            }).execute()
+        except Exception:
+            pass  # Don't fail the scan if DB write fails
 
     return {
         "status": "success",
@@ -381,7 +447,6 @@ def analyze_range(payload: AnalyzeRangeRequest):
         "ml_status": ml_status,
         "message": ai_msg,
         "data_points": len(history),
-        "filename": filename,
         "raw_data": history,
     }
 
@@ -543,3 +608,122 @@ def get_metrics_history(user_id: str, _uid: str = Depends(verify_token)):
         }
         for r in res.data
     ]
+
+
+# ── Routes: injury markers (Supabase injury_logs) ─────────────────────────────
+
+@app.get("/users/{user_id}/injury-markers")
+def get_injury_markers(user_id: str, _uid: str = Depends(verify_token)):
+    """Return all body-diagram markers for a user."""
+    res = (
+        supabase.table("injury_logs")
+        .select("*")
+        .eq("supabase_user_id", user_id)
+        .execute()
+    )
+    return res.data
+
+
+@app.put("/users/{user_id}/injury-markers", status_code=200)
+def save_injury_markers(
+    user_id: str,
+    markers: list[InjuryMarkerCreate],
+    _uid: str = Depends(verify_token),
+):
+    """Replace all body-diagram markers for a user (full sync)."""
+    # Delete existing then insert the full current set
+    supabase.table("injury_logs").delete().eq("supabase_user_id", user_id).execute()
+    if markers:
+        rows = [
+            {
+                "supabase_user_id": user_id,
+                "slug": m.slug,
+                "side": m.side,
+                "status": m.status,
+                "how_it_happened": m.how_it_happened,
+                "date_of_injury": m.date_of_injury,
+                "doctor_diagnosis": m.doctor_diagnosis,
+                "initial_symptoms": m.initial_symptoms,
+            }
+            for m in markers
+        ]
+        supabase.table("injury_logs").insert(rows).execute()
+    return {"saved": len(markers)}
+
+
+# ── Routes: PT finder proxies ─────────────────────────────────────────────────
+
+_ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+
+def _http_get(url: str, headers: dict | None = None) -> dict:
+    req = urllib.request.Request(url, headers=headers or {})
+    with urllib.request.urlopen(req, timeout=10, context=_ssl_ctx) as resp:
+        return _json.loads(resp.read())
+
+
+@app.get("/pt-search")
+def pt_search(zip: str, limit: int = 20):
+    """Proxy the NPPES NPI registry for Physical Therapists near a zip code."""
+    if not zip.isdigit() or len(zip) != 5:
+        raise HTTPException(status_code=400, detail="Invalid zip code")
+    params = urllib.parse.urlencode({
+        "taxonomy_description": "Physical Therapist",
+        "postal_code": zip,
+        "limit": min(limit, 20),
+        "version": "2.1",
+    })
+    data = _http_get(f"https://npiregistry.cms.hhs.gov/api/?{params}")
+    return data.get("results", [])
+
+
+@app.get("/geocode")
+def geocode(address: str):
+    """Proxy Nominatim geocoding — keeps rate-limit compliance server-side."""
+    params = urllib.parse.urlencode({
+        "q": address,
+        "format": "json",
+        "limit": 1,
+        "countrycodes": "us",
+    })
+    results = _http_get(
+        f"https://nominatim.openstreetmap.org/search?{params}",
+        headers={"User-Agent": "ReboundRecoveryApp/1.0 (hackhealth2026)"},
+    )
+    if results:
+        return {"lat": float(results[0]["lat"]), "lng": float(results[0]["lon"])}
+    return None
+
+
+class GeocodeBatchRequest(BaseModel):
+    addresses: list[str]
+
+
+@app.post("/geocode/batch")
+def geocode_batch(payload: GeocodeBatchRequest):
+    """
+    Geocode multiple addresses in one request.
+    Handles Nominatim's 1 req/sec rate limit server-side.
+    Returns a list parallel to the input — null where geocoding failed.
+    """
+    out: list[dict | None] = []
+    for i, address in enumerate(payload.addresses):
+        if i > 0:
+            time.sleep(1.1)  # Nominatim rate limit
+        try:
+            params = urllib.parse.urlencode({
+                "q": address,
+                "format": "json",
+                "limit": 1,
+                "countrycodes": "us",
+            })
+            results = _http_get(
+                f"https://nominatim.openstreetmap.org/search?{params}",
+                headers={"User-Agent": "ReboundRecoveryApp/1.0 (hackhealth2026)"},
+            )
+            if results:
+                out.append({"lat": float(results[0]["lat"]), "lng": float(results[0]["lon"])})
+            else:
+                out.append(None)
+        except Exception:
+            out.append(None)
+    return out

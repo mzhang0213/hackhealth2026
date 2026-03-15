@@ -164,14 +164,14 @@ export default function LandingScreen() {
           </View>
         </View>
 
-        {/* Stats strip */}
-        <View style={styles.statsRow}>
-          <StatChip value="AI" label="POWERED" />
-          <View style={styles.statDivider} />
-          <StatChip value="CV" label="ROM SCAN" />
-          <View style={styles.statDivider} />
-          <StatChip value="24/7" label="TRACKING" />
-        </View>
+        {/*/!* Stats strip *!/*/}
+        {/*<View style={styles.statsRow}>*/}
+        {/*  <StatChip value="AI" label="POWERED" />*/}
+        {/*  <View style={styles.statDivider} />*/}
+        {/*  <StatChip value="CV" label="ROM SCAN" />*/}
+        {/*  <View style={styles.statDivider} />*/}
+        {/*  <StatChip value="24/7" label="TRACKING" />*/}
+        {/*</View>*/}
 
         {/* Section header */}
         <View style={styles.sectionHeader}>

@@ -1,4 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import BottomSheet, {
   BottomSheetBackdrop,
   BottomSheetScrollView,
@@ -19,11 +18,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { HUD } from '@/constants/hud-theme';
-import {
-  BODY_DIAGRAM_KEY,
-  type InjuryStatus,
-  type MarkedPart,
-} from '@/constants/body-store';
+import { type InjuryStatus, type MarkedPart } from '@/constants/body-store';
+import { api } from '@/constants/api';
+import { useUser } from '@/context/UserContext';
 import Body, { ExtendedBodyPart, Slug } from 'react-native-body-highlighter';
 
 const STATUS_COLORS: Record<InjuryStatus, string> = {
@@ -50,6 +47,7 @@ function formatSlug(slug: string) {
 }
 
 export default function InjuryScreen() {
+  const { user } = useUser();
   const [view, setView] = useState<'front' | 'back'>('front');
   const [markedParts, setMarkedParts] = useState<Record<string, MarkedPart>>({});
   const [sheetMode, setSheetMode] = useState<'add' | 'view'>('add');
@@ -63,16 +61,46 @@ export default function InjuryScreen() {
 
   const sheetRef = useRef<BottomSheet>(null);
   const snapPoints = useMemo(() => ['55%', '92%'], []);
+  const hasLoaded = useRef(false);
 
+  // Load markers from API on mount
   useEffect(() => {
-    AsyncStorage.getItem(BODY_DIAGRAM_KEY).then((raw) => {
-      if (raw) setMarkedParts(JSON.parse(raw));
+    if (!user) return;
+    api.getInjuryMarkers(user.id).then((rows) => {
+      const parts: Record<string, MarkedPart> = {};
+      for (const r of rows) {
+        const key = r.side ? `${r.slug}-${r.side}` : r.slug;
+        parts[key] = {
+          slug: r.slug as Slug,
+          side: r.side as 'left' | 'right' | undefined ?? undefined,
+          status: r.status as InjuryStatus,
+          howItHappened: r.how_it_happened ?? undefined,
+          dateOfInjury: r.date_of_injury ?? undefined,
+          doctorDiagnosis: r.doctor_diagnosis ?? undefined,
+          initialSymptoms: r.initial_symptoms ?? undefined,
+        };
+      }
+      setMarkedParts(parts);
+      hasLoaded.current = true;
+    }).catch(() => {
+      hasLoaded.current = true;
     });
-  }, []);
+  }, [user]);
 
+  // Sync markers to API whenever they change
   useEffect(() => {
-    AsyncStorage.setItem(BODY_DIAGRAM_KEY, JSON.stringify(markedParts));
-  }, [markedParts]);
+    if (!user || !hasLoaded.current) return;
+    const markers = Object.values(markedParts).map((p) => ({
+      slug: p.slug,
+      side: p.side ?? null,
+      status: p.status,
+      how_it_happened: p.howItHappened ?? null,
+      date_of_injury: p.dateOfInjury ?? null,
+      doctor_diagnosis: p.doctorDiagnosis ?? null,
+      initial_symptoms: p.initialSymptoms ?? null,
+    }));
+    api.saveInjuryMarkers(user.id, markers).catch(() => {});
+  }, [markedParts, user]);
 
   function resetForm() {
     setSelectedStatus('pain');

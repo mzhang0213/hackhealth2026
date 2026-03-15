@@ -8,7 +8,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { UserProvider } from '@/context/UserContext';
 
 export const unstable_settings = {
-  anchor: '(tabs)',
+  anchor: 'landing',
 };
 
 export default function RootLayout() {
@@ -18,10 +18,10 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <UserProvider>
-          <Stack>
-            <Stack.Screen name="(tabs)"      options={{ headerShown: false }} />
+          <Stack initialRouteName="landing">
             <Stack.Screen name="landing"     options={{ headerShown: false }} />
             <Stack.Screen name="auth"        options={{ headerShown: false }} />
+            <Stack.Screen name="(tabs)"      options={{ headerShown: false }} />
             <Stack.Screen name="onboarding"  options={{ headerShown: false }} />
             <Stack.Screen name="modal"       options={{ presentation: 'modal', title: 'Modal' }} />
             <Stack.Screen name="injury-report" options={{ title: 'Injury Profile', headerBackTitle: 'Back' }} />

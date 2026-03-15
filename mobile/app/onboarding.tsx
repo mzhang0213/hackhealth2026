@@ -149,7 +149,7 @@ export default function OnboardingScreen() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
       const profile = await api.createUser({
-        id: session.user.id,       // use Supabase user.id as the profile ID
+        supabase_id: session.user.id,
         name: name.trim(),
         sport: sport.trim(),
         injury_description: injuryDesc.trim(),

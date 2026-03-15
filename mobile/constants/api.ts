@@ -21,6 +21,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export type CreateUserPayload = {
+  supabase_id: string;
   name: string;
   sport: string;
   injury_description: string;
@@ -66,6 +67,17 @@ export type MetricPoint = {
   strength: number;
 };
 
+export type InjuryMarker = {
+  id?: string;
+  slug: string;
+  side?: string | null;
+  status: string;
+  how_it_happened?: string | null;
+  date_of_injury?: string | null;
+  doctor_diagnosis?: string | null;
+  initial_symptoms?: string | null;
+};
+
 export const api = {
   // ── Users ──────────────────────────────────────────────────────────────────
   createUser: (payload: CreateUserPayload) =>
@@ -109,4 +121,14 @@ export const api = {
 
   getMetricsHistory: (userId: string) =>
     request<MetricPoint[]>(`/users/${userId}/metrics/history`),
+
+  // ── Injury markers ─────────────────────────────────────────────────────────
+  getInjuryMarkers: (userId: string) =>
+    request<InjuryMarker[]>(`/users/${userId}/injury-markers`),
+
+  saveInjuryMarkers: (userId: string, markers: InjuryMarker[]) =>
+    request<{ saved: number }>(`/users/${userId}/injury-markers`, {
+      method: 'PUT',
+      body: JSON.stringify(markers),
+    }),
 };
