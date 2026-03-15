@@ -4,21 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import HudPanel from '@/components/hud/HudPanel';
 import RecoveryChart from '@/components/hud/RecoveryChart';
-import StatsCards from '@/components/hud/StatsCards';
 import { HUD } from '@/constants/hud-theme';
-
-// ── Profile info ──────────────────────────────────────────────────────────────
-
-const USER = {
-  name: 'ALEX MORGAN',
-  handle: 'OPERATOR_ALEX',
-  sport: 'Basketball',
-  injury: 'ACL — Left Knee',
-  injuryDate: 'Jan 20, 2026',
-  recoveryDay: 56,
-  targetDate: 'Jul 01, 2026',
-  pt: 'Dr. Sarah Kim, PT',
-};
+import { useUser } from '@/context/UserContext';
 
 function Avatar() {
   return (
@@ -100,21 +87,25 @@ const infoStyles = StyleSheet.create({
 
 // ── Recovery progress bar ─────────────────────────────────────────────────────
 
-function RecoveryProgress() {
-  const progress = 0.45; // 45% — replace with real calc
+// Assumes ~180 day standard recovery; adjust per injury type later
+const RECOVERY_TOTAL_DAYS = 180;
+
+function RecoveryProgress({ recoveryDay }: { recoveryDay: number }) {
+  const progress = Math.min(1, recoveryDay / RECOVERY_TOTAL_DAYS);
+  const pct = Math.round(progress * 100);
   return (
     <View style={progressStyles.container}>
       <View style={progressStyles.header}>
         <Text style={progressStyles.label}>RECOVERY PROGRESS</Text>
-        <Text style={[progressStyles.pct, { color: HUD.cyan }]}>45%</Text>
+        <Text style={[progressStyles.pct, { color: HUD.cyan }]}>{pct}%</Text>
       </View>
       <View style={progressStyles.track}>
-        <View style={[progressStyles.fill, { width: `${progress * 100}%` }]} />
-        <View style={[progressStyles.marker, { left: `${progress * 100}%` as any }]} />
+        <View style={[progressStyles.fill, { width: `${pct}%` }]} />
+        <View style={[progressStyles.marker, { left: `${pct}%` as any }]} />
       </View>
       <View style={progressStyles.footer}>
-        <Text style={progressStyles.footerLabel}>DAY {USER.recoveryDay}</Text>
-        <Text style={progressStyles.footerLabel}>TARGET: {USER.targetDate}</Text>
+        <Text style={progressStyles.footerLabel}>DAY {recoveryDay}</Text>
+        <Text style={progressStyles.footerLabel}>TARGET: DAY {RECOVERY_TOTAL_DAYS}</Text>
       </View>
     </View>
   );
@@ -157,6 +148,7 @@ const progressStyles = StyleSheet.create({
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function ProfileScreen() {
+  const { user, clearUser } = useUser();
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView
@@ -205,11 +197,11 @@ export default function ProfileScreen() {
                   },
                 ]}
               >
-                {USER.name}
+                {user?.name.toUpperCase() ?? '—'}
               </Text>
-              <Text style={styles.userHandle}>@{USER.handle}</Text>
+              <Text style={styles.userHandle}>@{user ? user.name.toLowerCase().replace(/\s+/g, '_') : '—'}</Text>
               <View style={styles.sportBadge}>
-                <Text style={styles.sportBadgeText}>{USER.sport.toUpperCase()}</Text>
+                <Text style={styles.sportBadgeText}>{user?.sport.toUpperCase() ?? '—'}</Text>
               </View>
             </View>
           </View>
@@ -217,11 +209,14 @@ export default function ProfileScreen() {
 
         {/* Injury info */}
         <HudPanel title="INJURY PROFILE" subtitle="ACTIVE RECOVERY PROTOCOL" style={{ marginBottom: 16 }}>
-          <InfoRow label="DIAGNOSIS" value={USER.injury} color={HUD.danger} />
-          <InfoRow label="DATE OF INJURY" value={USER.injuryDate} />
-          <InfoRow label="PHYSICAL THERAPIST" value={USER.pt} color={HUD.cyan} />
+          <InfoRow label="DIAGNOSIS" value={user?.injury_description ?? '—'} color={HUD.danger} />
+          <InfoRow label="DATE OF INJURY" value={user?.injury_date ?? '—'} />
+          <InfoRow label="PHYSICAL THERAPIST" value={user?.pt_name || '—'} color={HUD.cyan} />
+          {user?.doctor_diagnosis ? (
+            <InfoRow label="DR. DIAGNOSIS" value={user.doctor_diagnosis} />
+          ) : null}
           <View style={{ marginTop: 16 }}>
-            <RecoveryProgress />
+            <RecoveryProgress recoveryDay={user?.recovery_day ?? 0} />
           </View>
         </HudPanel>
 
@@ -245,9 +240,9 @@ export default function ProfileScreen() {
             { icon: 'notifications-outline' as const, label: 'NOTIFICATIONS', sub: 'Reminders & alerts' },
             { icon: 'shield-checkmark-outline' as const, label: 'PRIVACY', sub: 'Data & permissions' },
             { icon: 'medical-outline' as const, label: 'MEDICAL INFO', sub: 'Insurance & doctor details' },
-            { icon: 'log-out-outline' as const, label: 'SIGN OUT', sub: '', danger: true },
+            { icon: 'log-out-outline' as const, label: 'SIGN OUT', sub: '', danger: true, onPress: clearUser },
           ].map((item) => (
-            <TouchableOpacity key={item.label} style={styles.settingsRow} activeOpacity={0.7}>
+            <TouchableOpacity key={item.label} style={styles.settingsRow} activeOpacity={0.7} onPress={item.onPress}>
               <View style={[styles.settingsIcon, item.danger && styles.settingsIconDanger]}>
                 <Ionicons
                   name={item.icon}

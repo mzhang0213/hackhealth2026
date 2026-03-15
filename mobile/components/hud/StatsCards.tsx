@@ -11,12 +11,14 @@ interface StatDef {
   change?: string;
 }
 
-const STATS: StatDef[] = [
-  { label: 'RECOVERY DAY', value: 56, icon: 'calendar-outline', color: HUD.cyan },
-  { label: 'STREAK ACTIVE', value: 12, change: '+3', icon: 'flame-outline', color: HUD.warning },
-  { label: 'MOBILITY INDEX', value: 78, change: '+5%', icon: 'analytics-outline', color: HUD.success },
-  { label: 'PAIN REDUCTION', value: 62, change: '+8%', icon: 'trending-up-outline', color: HUD.cyan },
-];
+function buildStats(recoveryDay: number): StatDef[] {
+  return [
+    { label: 'RECOVERY DAY', value: recoveryDay, icon: 'calendar-outline', color: HUD.cyan },
+    { label: 'STREAK ACTIVE', value: 12, change: '+3', icon: 'flame-outline', color: HUD.warning },
+    { label: 'MOBILITY INDEX', value: 78, change: '+5%', icon: 'analytics-outline', color: HUD.success },
+    { label: 'PAIN REDUCTION', value: 62, change: '+8%', icon: 'trending-up-outline', color: HUD.cyan },
+  ];
+}
 
 function padNum(n: number): string {
   return String(Math.floor(n));
@@ -108,10 +110,11 @@ function StatCard({ stat }: { stat: StatDef }) {
   );
 }
 
-export default function StatsCards() {
+export default function StatsCards({ recoveryDay = 0 }: { recoveryDay?: number }) {
+  const stats = buildStats(recoveryDay);
   return (
     <View style={styles.grid}>
-      {STATS.map((stat) => (
+      {stats.map((stat) => (
         <StatCard key={stat.label} stat={stat} />
       ))}
     </View>

@@ -5,6 +5,7 @@ import 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { UserProvider } from '@/context/UserContext';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -16,11 +17,14 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-          <Stack.Screen name="injury-report" options={{ title: 'Injury Profile', headerBackTitle: 'Back' }} />
-        </Stack>
+        <UserProvider>
+          <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+            <Stack.Screen name="injury-report" options={{ title: 'Injury Profile', headerBackTitle: 'Back' }} />
+          </Stack>
+        </UserProvider>
         <StatusBar style="auto" />
       </ThemeProvider>
     </GestureHandlerRootView>

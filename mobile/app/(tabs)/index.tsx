@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { HUD, hudGlow } from '@/constants/hud-theme';
 import { BODY_DIAGRAM_KEY, type MarkedPart } from '@/constants/body-store';
+import { useUser } from '@/context/UserContext';
 import ExerciseTracker from '@/components/hud/ExerciseTracker';
 import HudPanel from '@/components/hud/HudPanel';
 import PainCheckin from '@/components/hud/PainCheckin';
@@ -563,6 +564,7 @@ const bodyStyles = StyleSheet.create({
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
 export default function DashboardScreen() {
+  const { user } = useUser();
   const [bodyParts, setBodyParts] = useState<Record<string, MarkedPart>>({});
 
   useEffect(() => {
@@ -602,17 +604,19 @@ export default function DashboardScreen() {
                 },
               ]}
             >
-              OPERATOR ALEX
+              {user ? user.name.toUpperCase() : '...'}
             </Text>
           </Text>
           <Text style={styles.statusLine}>
-            // DAY 056 :: ACL RECOVERY PROTOCOL :: STATUS ACTIVE
+            {user
+              ? `// DAY ${String(user.recovery_day).padStart(3, '0')} :: ${user.injury_description.toUpperCase()} :: STATUS ACTIVE`
+              : '// LOADING OPERATOR DATA...'}
           </Text>
         </View>
 
         {/* Stats cards */}
         <View style={{ marginBottom: 20 }}>
-          <StatsCards />
+          <StatsCards recoveryDay={user?.recovery_day ?? 0} />
         </View>
 
         {/* Exercise tracker */}
