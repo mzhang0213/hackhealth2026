@@ -231,12 +231,11 @@ const styles = StyleSheet.create({
   },
   painGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
+    gap: 4,
     marginBottom: 12,
   },
   painBtn: {
-    width: 42,
+    flex: 1,
     height: 36,
     borderWidth: 1,
     borderRadius: 3,
@@ -245,9 +244,9 @@ const styles = StyleSheet.create({
   },
   painBtnText: {
     fontFamily: HUD.mono,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 1,
+    letterSpacing: 0,
   },
   descRow: {
     flexDirection: 'row',

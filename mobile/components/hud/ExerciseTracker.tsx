@@ -51,29 +51,35 @@ export default function ExerciseTracker() {
     );
   }
 
+  const allDone = doneCount === total;
+  const activeColor = allDone ? HUD.success : HUD.cyan;
+
   return (
     <View>
+      {/* Daily exercise guide label */}
+      <Text style={styles.dailyLabel}>DAILY EXERCISE GUIDE</Text>
+
       {/* Header row */}
       <View style={styles.headerRow}>
         <Text style={styles.progressLabel}>PROTOCOL.PROGRESS</Text>
-        <Text style={styles.counterText}>
+        <Text style={[styles.counterText, allDone && styles.counterTextDone]}>
           {doneCount}/{total} COMPLETE
         </Text>
       </View>
 
       {/* Segmented progress bar */}
       <View style={styles.segmentRow}>
-        {exercises.map((e, i) => (
+        {exercises.map((e) => (
           <View
             key={e.id}
             style={[
               styles.segment,
               {
-                backgroundColor: e.done ? HUD.cyan : 'rgba(0,212,255,0.1)',
-                borderColor: e.done ? HUD.cyan : HUD.border,
+                backgroundColor: e.done ? activeColor : `${activeColor}18`,
+                borderColor: e.done ? activeColor : HUD.border,
                 ...(e.done && Platform.OS === 'ios'
                   ? {
-                      shadowColor: HUD.cyan,
+                      shadowColor: activeColor,
                       shadowOffset: { width: 0, height: 0 },
                       shadowRadius: 4,
                       shadowOpacity: 0.7,
@@ -155,6 +161,14 @@ export default function ExerciseTracker() {
 }
 
 const styles = StyleSheet.create({
+  dailyLabel: {
+    fontFamily: HUD.mono,
+    fontSize: 11,
+    fontWeight: '700',
+    color: HUD.text,
+    letterSpacing: 2,
+    marginBottom: 10,
+  },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -172,6 +186,9 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: HUD.cyan,
     letterSpacing: 1,
+  },
+  counterTextDone: {
+    color: HUD.success,
   },
   segmentRow: {
     flexDirection: 'row',

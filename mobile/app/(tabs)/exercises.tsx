@@ -1,13 +1,17 @@
+import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
   Modal,
-  SafeAreaView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { HUD } from '@/constants/hud-theme';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -19,9 +23,9 @@ type Exercise = {
 };
 
 type DaySection = {
-  dayAbbr: string;  // e.g. "Tue"
-  dayNum: string;   // e.g. "21"
-  month: string;    // e.g. "Mar"
+  dayAbbr: string;
+  dayNum: string;
+  month: string;
   exercises: Exercise[];
 };
 
@@ -33,10 +37,10 @@ const SECTIONS: DaySection[] = [
     dayNum: '17',
     month: 'Mar',
     exercises: [
-      { id: '1', name: 'Quad Sets', accentColor: '#e74c3c' },
-      { id: '2', name: 'Heel Slides', accentColor: '#2ecc71' },
-      { id: '3', name: 'Compound Stretches', accentColor: '#f39c12' },
-      { id: '4', name: 'Rehab Check', accentColor: '#0a7ea4', isRehab: true },
+      { id: '1', name: 'Quad Sets', accentColor: HUD.danger },
+      { id: '2', name: 'Heel Slides', accentColor: HUD.success },
+      { id: '3', name: 'Compound Stretches', accentColor: HUD.warning },
+      { id: '4', name: 'Rehab Check', accentColor: HUD.cyan, isRehab: true },
     ],
   },
   {
@@ -44,8 +48,8 @@ const SECTIONS: DaySection[] = [
     dayNum: '18',
     month: 'Mar',
     exercises: [
-      { id: '5', name: 'Straight Leg Raises', accentColor: '#e74c3c' },
-      { id: '6', name: 'Step-Ups', accentColor: '#9b59b6' },
+      { id: '5', name: 'Straight Leg Raises', accentColor: HUD.danger },
+      { id: '6', name: 'Step-Ups', accentColor: HUD.cyan },
     ],
   },
   {
@@ -53,8 +57,8 @@ const SECTIONS: DaySection[] = [
     dayNum: '19',
     month: 'Mar',
     exercises: [
-      { id: '7', name: 'Hip Abduction', accentColor: '#2ecc71' },
-      { id: '8', name: 'Calf Raises', accentColor: '#f39c12' },
+      { id: '7', name: 'Hip Abduction', accentColor: HUD.success },
+      { id: '8', name: 'Calf Raises', accentColor: HUD.warning },
     ],
   },
   {
@@ -62,8 +66,8 @@ const SECTIONS: DaySection[] = [
     dayNum: '20',
     month: 'Mar',
     exercises: [
-      { id: '9', name: 'Balance Board', accentColor: '#e74c3c' },
-      { id: '10', name: 'pwc event', accentColor: '#9b59b6' },
+      { id: '9', name: 'Balance Board', accentColor: HUD.danger },
+      { id: '10', name: 'PWC Event', accentColor: HUD.cyan },
     ],
   },
 ];
@@ -84,11 +88,6 @@ export default function ExercisesScreen() {
     }
   }
 
-  // function handleCameraNext() {
-  //   setCameraModal(false);
-  //   setVideoModal(true);
-  // }
-
   function handleClose() {
     setCameraModal(false);
     setVideoModal(false);
@@ -96,23 +95,49 @@ export default function ExercisesScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Title */}
-      <Text style={styles.title}>My Exercises</Text>
+    <SafeAreaView style={styles.safe}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerAccentLine} />
+        <View style={styles.headerRow}>
+          <View>
+            <Text
+              style={[
+                styles.heading,
+                Platform.OS === 'ios' && {
+                  textShadowColor: HUD.cyan,
+                  textShadowOffset: { width: 0, height: 0 },
+                  textShadowRadius: 6,
+                },
+              ]}
+            >
+              REHAB PROTOCOL
+            </Text>
+            <Text style={styles.subtitle}>EXERCISE QUEUE — ACL RECOVERY</Text>
+          </View>
+          <View style={styles.headerBadge}>
+            <Ionicons name="barbell-outline" size={18} color={HUD.cyan} />
+          </View>
+        </View>
+      </View>
 
-      <ScrollView contentContainerStyle={styles.list}>
+      <ScrollView
+        contentContainerStyle={styles.list}
+        showsVerticalScrollIndicator={false}
+      >
         {SECTIONS.map((section, si) => (
           <View key={si} style={styles.section}>
-            {/* Left: date bubble | Right: exercise stack */}
             <View style={styles.row}>
+              {/* Date bubble */}
               <View style={styles.dayBubbleCol}>
                 <View style={styles.dayBubble}>
-                  <Text style={styles.dayAbbr}>{section.dayAbbr}</Text>
+                  <Text style={styles.dayAbbr}>{section.dayAbbr.toUpperCase()}</Text>
                   <Text style={styles.dayNum}>{section.dayNum}</Text>
-                  <Text style={styles.dayMonth}>{section.month}</Text>
+                  <Text style={styles.dayMonth}>{section.month.toUpperCase()}</Text>
                 </View>
               </View>
 
+              {/* Exercise cards */}
               <View style={styles.exerciseCol}>
                 {section.exercises.map((ex) => (
                   <TouchableOpacity
@@ -121,45 +146,107 @@ export default function ExercisesScreen() {
                     onPress={() => handleExercisePress(ex, ex.isRehab)}
                     activeOpacity={0.75}
                   >
+                    {/* Left accent bar */}
                     <View style={[styles.accentBar, { backgroundColor: ex.accentColor }]} />
+
                     <Text style={[styles.exerciseName, ex.isRehab && styles.rehabName]}>
-                      {ex.name}
+                      {ex.name.toUpperCase()}
                     </Text>
+
+                    <Ionicons
+                      name={ex.isRehab ? 'scan-outline' : 'play-circle-outline'}
+                      size={16}
+                      color={ex.isRehab ? '#fff' : ex.accentColor}
+                      style={styles.exerciseIcon}
+                    />
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
+
+            {/* Section divider */}
+            {si < SECTIONS.length - 1 && <View style={styles.divider} />}
           </View>
         ))}
       </ScrollView>
 
-      {/* Camera modal */}
+      {/* Camera / ROM modal */}
       <Modal visible={cameraModal} animationType="slide" onRequestClose={handleClose}>
-        <View style={styles.cameraScreen}>
-          <Text style={styles.cameraTitle}>{selectedExercise?.name}</Text>
-          <View style={styles.cameraPreview}>
-            <Text style={styles.cameraHint}>open camera{'\n'}use visuals like apple face id setup</Text>
+        <SafeAreaView style={styles.modalSafe}>
+          <View style={styles.modalHeader}>
+            <View style={styles.modalHeaderLine} />
+            <View style={styles.modalHeaderRow}>
+              <View>
+                <Text style={styles.modalTitle}>ROM ANALYSIS</Text>
+                <Text style={styles.modalSubtitle}>
+                  {selectedExercise?.name.toUpperCase()}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={handleClose} style={styles.modalCloseBtn}>
+                <Ionicons name="close-outline" size={20} color={HUD.muted} />
+              </TouchableOpacity>
+            </View>
           </View>
-          <TouchableOpacity style={styles.nextButton} onPress={handleClose}> {/*<<< THIS IS TEMP RIGHT HERE <<<*/}
-            <Text style={styles.nextButtonText}>Next →</Text>
+
+          <View style={styles.cameraPreview}>
+            {/* Corner accents */}
+            <View style={[styles.cornerH, { top: 0, left: 0 }]} />
+            <View style={[styles.cornerV, { top: 0, left: 0 }]} />
+            <View style={[styles.cornerH, { bottom: 0, right: 0 }]} />
+            <View style={[styles.cornerV, { bottom: 0, right: 0 }]} />
+
+            <Ionicons name="scan-outline" size={48} color={`${HUD.cyan}50`} />
+            <Text style={styles.cameraHint}>
+              OPEN CAMERA{'\n'}USE VISUALS LIKE APPLE FACE ID SETUP
+            </Text>
+          </View>
+
+          <TouchableOpacity style={styles.primaryBtn} onPress={handleClose} activeOpacity={0.8}>
+            <View style={styles.primaryBtnAccentTL} />
+            <View style={styles.primaryBtnAccentBR} />
+            <Text style={styles.primaryBtnText}>NEXT →</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
-            <Text style={styles.closeButtonText}>Cancel</Text>
+
+          <TouchableOpacity style={styles.ghostBtn} onPress={handleClose} activeOpacity={0.7}>
+            <Text style={styles.ghostBtnText}>CANCEL</Text>
           </TouchableOpacity>
-        </View>
+        </SafeAreaView>
       </Modal>
 
       {/* Video example modal */}
       <Modal visible={videoModal} animationType="slide" onRequestClose={handleClose}>
-        <View style={styles.videoScreen}>
-          <Text style={styles.videoTitle}>{selectedExercise?.name}</Text>
-          <View style={styles.videoPlaceholder}>
-            <Text style={styles.videoPlaceholderText}>video exercise example</Text>
+        <SafeAreaView style={styles.modalSafe}>
+          <View style={styles.modalHeader}>
+            <View style={styles.modalHeaderLine} />
+            <View style={styles.modalHeaderRow}>
+              <View>
+                <Text style={styles.modalTitle}>EXERCISE DEMO</Text>
+                <Text style={styles.modalSubtitle}>
+                  {selectedExercise?.name.toUpperCase()}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={handleClose} style={styles.modalCloseBtn}>
+                <Ionicons name="close-outline" size={20} color={HUD.muted} />
+              </TouchableOpacity>
+            </View>
           </View>
-          <TouchableOpacity style={styles.nextButton} onPress={handleClose}>
-            <Text style={styles.nextButtonText}>Done</Text>
+
+          <View style={styles.videoPlaceholder}>
+            <View style={[styles.cornerH, { top: 0, left: 0 }]} />
+            <View style={[styles.cornerV, { top: 0, left: 0 }]} />
+            <View style={[styles.cornerH, { bottom: 0, right: 0 }]} />
+            <View style={[styles.cornerV, { bottom: 0, right: 0 }]} />
+
+            <Ionicons name="play-circle-outline" size={56} color={`${HUD.cyan}50`} />
+            <Text style={styles.videoPlaceholderText}>VIDEO EXERCISE EXAMPLE</Text>
+          </View>
+
+          <TouchableOpacity style={styles.primaryBtn} onPress={handleClose} activeOpacity={0.8}>
+            <View style={styles.primaryBtnAccentTL} />
+            <View style={styles.primaryBtnAccentBR} />
+            <Text style={styles.primaryBtnText}>DONE</Text>
           </TouchableOpacity>
-        </View>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
@@ -168,113 +255,160 @@ export default function ExercisesScreen() {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f7fa' },
-  title: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: '#11181C',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 8,
-  },
-  list: { paddingHorizontal: 16, paddingBottom: 32 },
+  safe: { flex: 1, backgroundColor: HUD.bg },
 
-  section: { marginBottom: 12 },
+  header: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10 },
+  headerAccentLine: { height: 1, backgroundColor: HUD.cyan, opacity: 0.3, marginBottom: 12 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  heading: {
+    fontFamily: HUD.mono,
+    fontSize: 18,
+    fontWeight: '700',
+    color: HUD.cyan,
+    letterSpacing: 3,
+  },
+  subtitle: { fontFamily: HUD.mono, fontSize: 9, color: HUD.muted, letterSpacing: 1.5, marginTop: 2 },
+  headerBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: `${HUD.cyan}40`,
+    backgroundColor: `${HUD.cyan}10`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  list: { paddingHorizontal: 16, paddingBottom: 32 },
+  section: { marginBottom: 4 },
+  divider: { height: 1, backgroundColor: HUD.cyan, opacity: 0.08, marginVertical: 10 },
 
   row: { flexDirection: 'row', alignItems: 'flex-start' },
 
-  dayBubbleCol: { width: 52, alignItems: 'center', marginRight: 10, paddingTop: 2 },
+  dayBubbleCol: { width: 54, alignItems: 'center', marginRight: 10, paddingTop: 2 },
   dayBubble: {
     width: 50,
-    paddingVertical: 6,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#C5CDD3',
+    paddingVertical: 7,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: HUD.border,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: HUD.cardBg,
   },
-  exerciseCol: { flex: 1, gap: 6 },
-  dayAbbr: { fontSize: 11, fontWeight: '600', color: '#687076', letterSpacing: 0.3 },
-  dayNum: { fontSize: 18, fontWeight: '700', color: '#11181C', lineHeight: 22 },
-  dayMonth: { fontSize: 10, fontWeight: '400', color: '#9BA1A6', marginTop: 1 },
+  dayAbbr: { fontFamily: HUD.mono, fontSize: 9, color: HUD.muted, letterSpacing: 1 },
+  dayNum: { fontFamily: HUD.mono, fontSize: 20, fontWeight: '700', color: HUD.cyan, lineHeight: 24 },
+  dayMonth: { fontFamily: HUD.mono, fontSize: 8, color: HUD.muted, marginTop: 1, letterSpacing: 0.5 },
 
+  exerciseCol: { flex: 1, gap: 6 },
   exerciseCard: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 10,
+    backgroundColor: HUD.cardBg,
+    borderWidth: 1,
+    borderColor: HUD.border,
+    borderRadius: 4,
     minHeight: 44,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 3,
-    elevation: 2,
   },
-  rehabCard: { backgroundColor: '#0a7ea4' },
-  accentBar: { width: 5, alignSelf: 'stretch' },
+  rehabCard: {
+    backgroundColor: `${HUD.cyan}18`,
+    borderColor: `${HUD.cyan}50`,
+  },
+  accentBar: { width: 3, alignSelf: 'stretch' },
   exerciseName: {
     flex: 1,
     paddingHorizontal: 12,
     paddingVertical: 12,
-    fontSize: 15,
-    fontWeight: '500',
-    color: '#11181C',
+    fontFamily: HUD.mono,
+    fontSize: 11,
+    fontWeight: '600',
+    color: HUD.text,
+    letterSpacing: 1.5,
   },
-  rehabName: { color: '#fff', fontWeight: '600' },
+  rehabName: { color: HUD.cyan },
+  exerciseIcon: { marginRight: 12 },
 
-  // Camera modal
-  cameraScreen: {
-    flex: 1,
-    backgroundColor: '#0a7ea4',
+  // Modals
+  modalSafe: { flex: 1, backgroundColor: HUD.bg, padding: 16 },
+  modalHeader: { marginBottom: 24 },
+  modalHeaderLine: { height: 1, backgroundColor: HUD.cyan, opacity: 0.3, marginBottom: 12 },
+  modalHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  modalTitle: {
+    fontFamily: HUD.mono,
+    fontSize: 18,
+    fontWeight: '700',
+    color: HUD.cyan,
+    letterSpacing: 3,
+  },
+  modalSubtitle: { fontFamily: HUD.mono, fontSize: 9, color: HUD.muted, letterSpacing: 1.5, marginTop: 2 },
+  modalCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: HUD.border,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 32,
   },
-  cameraTitle: { fontSize: 22, fontWeight: '700', color: '#fff', marginBottom: 32 },
+
   cameraPreview: {
-    width: '100%',
-    aspectRatio: 3 / 4,
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.4)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.15)',
-    marginBottom: 32,
-  },
-  cameraHint: { color: '#fff', fontSize: 16, textAlign: 'center', lineHeight: 24 },
-
-  // Video modal
-  videoScreen: {
     flex: 1,
-    backgroundColor: '#f5f7fa',
+    backgroundColor: HUD.cardBg,
+    borderWidth: 1,
+    borderColor: HUD.border,
+    borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 32,
+    gap: 16,
+    marginBottom: 24,
+    overflow: 'hidden',
   },
-  videoTitle: { fontSize: 22, fontWeight: '700', color: '#11181C', marginBottom: 32 },
-  videoPlaceholder: {
-    width: '100%',
-    aspectRatio: 16 / 9,
-    borderRadius: 16,
-    backgroundColor: '#e0e5ea',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 32,
+  cameraHint: {
+    fontFamily: HUD.mono,
+    fontSize: 11,
+    color: HUD.muted,
+    textAlign: 'center',
+    letterSpacing: 1,
+    lineHeight: 18,
   },
-  videoPlaceholderText: { fontSize: 15, color: '#687076' },
 
-  nextButton: {
-    backgroundColor: '#0a7ea4',
-    paddingHorizontal: 40,
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginBottom: 12,
+  videoPlaceholder: {
+    flex: 1,
+    backgroundColor: HUD.cardBg,
+    borderWidth: 1,
+    borderColor: HUD.border,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    marginBottom: 24,
+    overflow: 'hidden',
   },
-  nextButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  closeButton: { paddingVertical: 10 },
-  closeButtonText: { color: '#687076', fontSize: 15 },
+  videoPlaceholderText: {
+    fontFamily: HUD.mono,
+    fontSize: 11,
+    color: HUD.muted,
+    letterSpacing: 1.5,
+  },
+
+  cornerH: { position: 'absolute', width: 18, height: 1.5, backgroundColor: HUD.cyan, opacity: 0.7 },
+  cornerV: { position: 'absolute', width: 1.5, height: 18, backgroundColor: HUD.cyan, opacity: 0.7 },
+
+  primaryBtn: {
+    borderWidth: 1,
+    borderColor: HUD.cyan,
+    borderRadius: 4,
+    paddingVertical: 14,
+    alignItems: 'center',
+    backgroundColor: `${HUD.cyan}18`,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  primaryBtnAccentTL: { position: 'absolute', top: 0, left: 0, width: 16, height: 1.5, backgroundColor: HUD.cyan, opacity: 0.8 },
+  primaryBtnAccentBR: { position: 'absolute', bottom: 0, right: 0, width: 16, height: 1.5, backgroundColor: HUD.cyan, opacity: 0.8 },
+  primaryBtnText: { fontFamily: HUD.mono, color: HUD.cyan, fontSize: 13, fontWeight: '700', letterSpacing: 2 },
+
+  ghostBtn: { paddingVertical: 12, alignItems: 'center' },
+  ghostBtnText: { fontFamily: HUD.mono, fontSize: 10, color: HUD.muted, letterSpacing: 2 },
 });
