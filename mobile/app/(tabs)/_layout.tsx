@@ -1,33 +1,94 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { Platform, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { HUD } from '@/constants/hud-theme';
+
+function TabIcon({
+  name,
+  color,
+  focused,
+}: {
+  name: keyof typeof Ionicons.glyphMap;
+  color: string;
+  focused: boolean;
+}) {
+  return (
+    <View style={{ alignItems: 'center' }}>
+      {focused && (
+        <View
+          style={{
+            position: 'absolute',
+            top: -8,
+            left: 0,
+            right: 0,
+            height: 1.5,
+            backgroundColor: HUD.cyan,
+            opacity: 0.9,
+            ...(Platform.OS === 'ios'
+              ? {
+                  shadowColor: HUD.cyan,
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowRadius: 4,
+                  shadowOpacity: 0.8,
+                }
+              : {}),
+          }}
+        />
+      )}
+      <Ionicons name={name} size={22} color={color} />
+    </View>
+  );
+}
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
         tabBarButton: HapticTab,
-      }}>
+        tabBarActiveTintColor: HUD.cyan,
+        tabBarInactiveTintColor: 'rgba(0,212,255,0.35)',
+        tabBarStyle: {
+          backgroundColor: HUD.bg,
+          borderTopColor: 'rgba(0,212,255,0.25)',
+          borderTopWidth: 1,
+        },
+        tabBarLabelStyle: {
+          fontFamily: HUD.mono,
+          fontSize: 9,
+          letterSpacing: 2,
+          marginBottom: 4,
+        },
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          title: 'DASH',
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name="grid-outline" color={color} focused={focused} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="injury"
+        options={{
+          title: 'INJURY',
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name="body-outline" color={color} focused={focused} />
+          ),
         }}
       />
       <Tabs.Screen
         name="report"
         options={{
-          title: 'Report',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: 'REHAB',
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name="barbell-outline" color={color} focused={focused} />
+          ),
         }}
       />
       <Tabs.Screen

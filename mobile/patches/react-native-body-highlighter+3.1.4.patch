@@ -1,0 +1,29 @@
+diff --git a/node_modules/react-native-body-highlighter/dist/index.js b/node_modules/react-native-body-highlighter/dist/index.js
+index c390729..8a91c4c 100644
+--- a/node_modules/react-native-body-highlighter/dist/index.js
++++ b/node_modules/react-native-body-highlighter/dist/index.js
+@@ -112,18 +112,20 @@ const Body = ({ colors = ["#0984e3", "#74b9ff"], data, scale = 1, side = "front"
+                 });
+                 const leftPaths = (((_b = bodyPart.path) === null || _b === void 0 ? void 0 : _b.left) || []).map((path) => {
+                     var _a;
+-                    const isOnlyRight = ((_a = data.find((d) => d.slug === bodyPart.slug)) === null || _a === void 0 ? void 0 : _a.side) === "right";
++                    const leftEntry = data.find((d) => d.slug === bodyPart.slug && (d.side === "left" || !d.side));
++                    const isOnlyRight = !leftEntry && data.some((d) => d.slug === bodyPart.slug && d.side === "right");
+                     const partStyles = getPartStyles(bodyPart);
+-                    const fillColor = isOnlyRight ? defaultFill : getColorToFill(bodyPart);
++                    const fillColor = isOnlyRight ? defaultFill : (leftEntry && leftEntry.color ? leftEntry.color : getColorToFill(bodyPart));
+                     return (<react_native_svg_1.Path key={path} onPress={isPartDisabled(bodyPart.slug)
+                             ? undefined
+                             : () => onBodyPartPress === null || onBodyPartPress === void 0 ? void 0 : onBodyPartPress(bodyPart, "left")} id={bodyPart.slug} fill={fillColor !== null && fillColor !== void 0 ? fillColor : partStyles.fill} stroke={partStyles.stroke} strokeWidth={partStyles.strokeWidth} d={path}/>);
+                 });
+                 const rightPaths = (((_c = bodyPart.path) === null || _c === void 0 ? void 0 : _c.right) || []).map((path) => {
+                     var _a;
+-                    const isOnlyLeft = ((_a = data.find((d) => d.slug === bodyPart.slug)) === null || _a === void 0 ? void 0 : _a.side) === "left";
++                    const rightEntry = data.find((d) => d.slug === bodyPart.slug && (d.side === "right" || !d.side));
++                    const isOnlyLeft = !rightEntry && data.some((d) => d.slug === bodyPart.slug && d.side === "left");
+                     const partStyles = getPartStyles(bodyPart);
+-                    const fillColor = isOnlyLeft ? defaultFill : getColorToFill(bodyPart);
++                    const fillColor = isOnlyLeft ? defaultFill : (rightEntry && rightEntry.color ? rightEntry.color : getColorToFill(bodyPart));
+                     return (<react_native_svg_1.Path key={path} onPress={isPartDisabled(bodyPart.slug)
+                             ? undefined
+                             : () => onBodyPartPress === null || onBodyPartPress === void 0 ? void 0 : onBodyPartPress(bodyPart, "right")} id={bodyPart.slug} fill={fillColor !== null && fillColor !== void 0 ? fillColor : partStyles.fill} stroke={partStyles.stroke} strokeWidth={partStyles.strokeWidth} d={path}/>);

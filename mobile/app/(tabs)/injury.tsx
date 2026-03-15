@@ -49,7 +49,7 @@ function formatSlug(slug: string) {
     .join(' ');
 }
 
-export default function BodyDiagramScreen() {
+export default function InjuryScreen() {
   const [view, setView] = useState<'front' | 'back'>('front');
   const [markedParts, setMarkedParts] = useState<Record<string, MarkedPart>>({});
   const [sheetMode, setSheetMode] = useState<'add' | 'view'>('add');
@@ -217,7 +217,6 @@ export default function BodyDiagramScreen() {
 
         {/* Body diagram */}
         <View style={styles.bodyContainer}>
-          {/* Corner accents */}
           <View style={[styles.cornerH, { top: 0, left: 0, backgroundColor: HUD.cyan }]} />
           <View style={[styles.cornerV, { top: 0, left: 0, backgroundColor: HUD.cyan }]} />
           <View style={[styles.cornerH, { bottom: 0, right: 0, backgroundColor: HUD.cyan }]} />
@@ -247,7 +246,6 @@ export default function BodyDiagramScreen() {
         {/* Marked parts list */}
         {markedCount > 0 && (
           <View style={styles.partsList}>
-            {/* Section header */}
             <View style={styles.sectionHeader}>
               <View style={styles.sectionLine} />
               <Text style={styles.sectionTitle}>MARKED AREAS</Text>
@@ -267,7 +265,6 @@ export default function BodyDiagramScreen() {
                   }}
                   activeOpacity={0.7}
                 >
-                  {/* Left accent */}
                   <View style={[styles.partRowAccent, { backgroundColor: STATUS_COLORS[p.status] }]} />
                   <View style={[styles.partDot, { backgroundColor: STATUS_COLORS[p.status] }]} />
                   <Text style={styles.partName}>
@@ -302,7 +299,6 @@ export default function BodyDiagramScreen() {
         backgroundStyle={{ backgroundColor: '#0d1623' }}
       >
         <BottomSheetScrollView contentContainerStyle={styles.sheetContent}>
-          {/* Sheet header */}
           <View style={styles.sheetTopAccent} />
           <View style={styles.sheetHeader}>
             <View style={styles.sheetTitleCol}>
@@ -328,7 +324,6 @@ export default function BodyDiagramScreen() {
 
           {sheetMode === 'add' ? (
             <>
-              {/* Status picker */}
               <Text style={styles.fieldLabel}>STATUS</Text>
               <View style={styles.statusRow}>
                 {(Object.keys(STATUS_COLORS) as InjuryStatus[]).map((s) => (
@@ -403,11 +398,7 @@ export default function BodyDiagramScreen() {
                 textAlignVertical="top"
               />
 
-              <TouchableOpacity
-                style={styles.saveBtn}
-                onPress={handleSave}
-                activeOpacity={0.8}
-              >
+              <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.8}>
                 <View style={styles.saveBtnAccentTL} />
                 <View style={styles.saveBtnAccentBR} />
                 <Text style={styles.saveBtnText}>SAVE INJURY MARKER</Text>
@@ -433,15 +424,9 @@ export default function BodyDiagramScreen() {
                     !activeMarkedPart.dateOfInjury &&
                     !activeMarkedPart.doctorDiagnosis &&
                     !activeMarkedPart.initialSymptoms && (
-                      <Text style={styles.noDetails}>
-                        // NO ADDITIONAL DETAILS RECORDED
-                      </Text>
+                      <Text style={styles.noDetails}>// NO ADDITIONAL DETAILS RECORDED</Text>
                     )}
-                  <TouchableOpacity
-                    style={styles.clearBtn}
-                    onPress={handleClear}
-                    activeOpacity={0.8}
-                  >
+                  <TouchableOpacity style={styles.clearBtn} onPress={handleClear} activeOpacity={0.8}>
                     <Ionicons name="trash-outline" size={15} color="#EF4444" />
                     <Text style={styles.clearBtnText}>CLEAR INJURY</Text>
                   </TouchableOpacity>
@@ -480,7 +465,6 @@ const styles = StyleSheet.create({
     paddingBottom: 48,
   },
 
-  // Header
   header: {
     marginBottom: 20,
     overflow: 'hidden',
@@ -523,7 +507,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Toggle
   toggleRow: {
     flexDirection: 'row',
     backgroundColor: HUD.cardBg,
@@ -566,7 +549,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Body diagram
   bodyContainer: {
     alignItems: 'center',
     marginVertical: 8,
@@ -591,7 +573,6 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
 
-  // Legend
   legend: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -615,7 +596,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 
-  // Marked parts list
   partsList: {
     marginTop: 4,
   },
@@ -693,7 +673,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
 
-  // Bottom sheet
   sheetContent: {
     padding: 24,
     paddingBottom: 48,
@@ -762,7 +741,6 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     marginBottom: 8,
   },
-
   statusRow: {
     flexDirection: 'row',
     gap: 8,
@@ -802,7 +780,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     opacity: 0.7,
   },
-
   input: {
     borderWidth: 1,
     borderColor: HUD.border,
@@ -819,7 +796,6 @@ const styles = StyleSheet.create({
     minHeight: 80,
     paddingTop: 10,
   },
-
   saveBtn: {
     borderWidth: 1,
     borderColor: HUD.cyan,
@@ -856,7 +832,6 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
 
-  // View mode
   detailRow: {
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
