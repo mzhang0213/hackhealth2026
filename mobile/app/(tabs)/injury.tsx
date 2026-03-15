@@ -5,9 +5,13 @@ import BottomSheet, {
   BottomSheetTextInput,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
+import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
+import Anthropic from '@anthropic-ai/sdk';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -25,6 +29,221 @@ import {
   type MarkedPart,
 } from '@/constants/body-store';
 import Body, { ExtendedBodyPart, Slug } from 'react-native-body-highlighter';
+
+// ─── Claude client ────────────────────────────────────────────────────────────
+
+const anthropic = new Anthropic({
+  apiKey: process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY ?? '',
+  dangerouslyAllowBrowser: true,
+});
+
+interface ParsedInjury {
+  howItHappened?: string;
+  dateOfInjury?: string;
+  doctorDiagnosis?: string;
+  initialSymptoms?: string;
+  status?: InjuryStatus;
+}
+
+async function parseInjuryFromSpeech(transcript: string): Promise<ParsedInjury> {
+  const message = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 512,
+    messages: [
+      {
+        role: 'user',
+        content: `You are extracting injury details from a voice description. Parse the following speech transcript and return a JSON object with these optional fields:
+- howItHappened: how the injury occurred
+- dateOfInjury: date mentioned (format as MM/DD/YYYY if possible, otherwise keep as said)
+- doctorDiagnosis: any medical diagnosis mentioned
+- initialSymptoms: symptoms described (swelling, pain, limited motion, etc.)
+- status: one of "pain", "moderate", or "recovering" based on severity described
+
+Only include fields that are clearly mentioned. Return ONLY valid JSON, no explanation.
+
+Transcript: "${transcript}"`,
+      },
+    ],
+  });
+  const raw = (message.content[0] as { type: string; text: string }).text.trim();
+  const clean = raw.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
+  return JSON.parse(clean) as ParsedInjury;
+}
+
+// ─── Voice overlay ────────────────────────────────────────────────────────────
+
+interface VoiceOverlayProps {
+  visible: boolean;
+  onClose: () => void;
+  onResult: (parsed: ParsedInjury) => void;
+}
+
+function VoiceOverlay({ visible, onClose, onResult }: VoiceOverlayProps) {
+  const [phase, setPhase] = useState<'idle' | 'listening' | 'processing' | 'done' | 'error'>('idle');
+  const [transcript, setTranscript] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
+
+  useEffect(() => {
+    if (visible) {
+      setPhase('idle');
+      setTranscript('');
+      setErrorMsg('');
+    } else {
+      try { ExpoSpeechRecognitionModule.stop(); } catch {}
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (phase === 'listening') {
+      pulseLoop.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.4, duration: 700, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
+        ])
+      );
+      pulseLoop.current.start();
+    } else {
+      pulseLoop.current?.stop();
+      pulseAnim.setValue(1);
+    }
+  }, [phase]);
+
+  useSpeechRecognitionEvent('result', (event) => {
+    const text = event.results?.[0]?.transcript ?? '';
+    setTranscript(text);
+  });
+
+  useSpeechRecognitionEvent('end', () => {
+    if (phase === 'listening') handleTranscriptDone();
+  });
+
+  useSpeechRecognitionEvent('error', (event) => {
+    setErrorMsg(event.error ?? 'Speech recognition failed.');
+    setPhase('error');
+  });
+
+  async function requestPermissionAndStart() {
+    const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+    if (!result.granted) {
+      setErrorMsg('Microphone permission denied.');
+      setPhase('error');
+      return;
+    }
+    setTranscript('');
+    setPhase('listening');
+    ExpoSpeechRecognitionModule.start({ lang: 'en-US', interimResults: true, continuous: false });
+  }
+
+  async function handleTranscriptDone() {
+    if (!transcript.trim()) { setPhase('idle'); return; }
+    setPhase('processing');
+    try {
+      const parsed = await parseInjuryFromSpeech(transcript);
+      setPhase('done');
+      setTimeout(() => { onResult(parsed); onClose(); }, 800);
+    } catch {
+      setErrorMsg('Failed to parse your description. Please try again.');
+      setPhase('error');
+    }
+  }
+
+  function handleMicPress() {
+    if (phase === 'idle' || phase === 'error') requestPermissionAndStart();
+    else if (phase === 'listening') try { ExpoSpeechRecognitionModule.stop(); } catch {}
+  }
+
+  const micColor =
+    phase === 'listening' ? HUD.danger :
+    phase === 'processing' ? HUD.warning :
+    phase === 'done' ? HUD.success :
+    phase === 'error' ? HUD.danger : HUD.cyan;
+
+  const statusText =
+    phase === 'idle' ? 'TAP MIC TO BEGIN' :
+    phase === 'listening' ? 'LISTENING — TAP TO STOP' :
+    phase === 'processing' ? 'ANALYZING WITH AI…' :
+    phase === 'done' ? 'FIELDS POPULATED' : 'ERROR';
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={voiceStyles.backdrop}>
+        <View style={voiceStyles.panel}>
+          <View style={[voiceStyles.cornerH, { top: 0, left: 0 }]} />
+          <View style={[voiceStyles.cornerV, { top: 0, left: 0 }]} />
+          <View style={[voiceStyles.cornerH, { top: 0, right: 0 }]} />
+          <View style={[voiceStyles.cornerV, { top: 0, right: 0 }]} />
+          <View style={[voiceStyles.cornerH, { bottom: 0, left: 0 }]} />
+          <View style={[voiceStyles.cornerV, { bottom: 0, left: 0 }]} />
+          <View style={[voiceStyles.cornerH, { bottom: 0, right: 0 }]} />
+          <View style={[voiceStyles.cornerV, { bottom: 0, right: 0 }]} />
+          <View style={[voiceStyles.topLine, { backgroundColor: micColor }]} />
+
+          <TouchableOpacity style={voiceStyles.closeBtn} onPress={onClose} activeOpacity={0.7}>
+            <Ionicons name="close-outline" size={20} color={HUD.muted} />
+          </TouchableOpacity>
+
+          <Text style={voiceStyles.title}>VOICE INPUT</Text>
+          <Text style={voiceStyles.hint}>
+            Describe your injury freely — what happened,{'\n'}when, any diagnosis, and your symptoms
+          </Text>
+
+          <View style={voiceStyles.micArea}>
+            {phase === 'listening' && (
+              <Animated.View
+                style={[voiceStyles.pulseRing, { borderColor: micColor, transform: [{ scale: pulseAnim }] }]}
+              />
+            )}
+            <TouchableOpacity
+              style={[voiceStyles.micBtn, { borderColor: micColor, backgroundColor: `${micColor}18` }]}
+              onPress={handleMicPress}
+              activeOpacity={0.8}
+              disabled={phase === 'processing' || phase === 'done'}
+            >
+              {phase === 'processing' ? (
+                <Ionicons name="pulse-outline" size={32} color={HUD.warning} />
+              ) : phase === 'done' ? (
+                <Ionicons name="checkmark-outline" size={32} color={HUD.success} />
+              ) : (
+                <Ionicons
+                  name={phase === 'listening' ? 'stop-circle-outline' : 'mic-outline'}
+                  size={32}
+                  color={micColor}
+                />
+              )}
+            </TouchableOpacity>
+          </View>
+
+          <Text style={[voiceStyles.statusText, { color: micColor }]}>{statusText}</Text>
+
+          {transcript.length > 0 && (
+            <View style={voiceStyles.transcriptBox}>
+              <View style={[voiceStyles.transcriptAccent, { backgroundColor: micColor }]} />
+              <Text style={voiceStyles.transcriptText}>{transcript}</Text>
+            </View>
+          )}
+
+          {phase === 'error' && (
+            <View style={voiceStyles.errorRow}>
+              <Ionicons name="warning-outline" size={12} color={HUD.danger} />
+              <Text style={voiceStyles.errorText}>{errorMsg}</Text>
+            </View>
+          )}
+
+          {phase === 'idle' && (
+            <Text style={voiceStyles.example}>
+              e.g. "I hurt my knee playing basketball last Tuesday,{'\n'}
+              doctor said it's a grade 2 sprain, lots of swelling"
+            </Text>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 const STATUS_COLORS: Record<InjuryStatus, string> = {
   pain: '#EF4444',
@@ -60,6 +279,7 @@ export default function InjuryScreen() {
   const [dateOfInjury, setDateOfInjury] = useState('');
   const [doctorDiagnosis, setDoctorDiagnosis] = useState('');
   const [initialSymptoms, setInitialSymptoms] = useState('');
+  const [voiceVisible, setVoiceVisible] = useState(false);
 
   const sheetRef = useRef<BottomSheet>(null);
   const snapPoints = useMemo(() => ['55%', '92%'], []);
@@ -133,6 +353,15 @@ export default function InjuryScreen() {
         },
       },
     ]);
+  }
+
+  function handleVoiceResult(parsed: ParsedInjury) {
+    if (parsed.howItHappened) setHowItHappened(parsed.howItHappened);
+    if (parsed.dateOfInjury) setDateOfInjury(parsed.dateOfInjury);
+    if (parsed.doctorDiagnosis) setDoctorDiagnosis(parsed.doctorDiagnosis);
+    if (parsed.initialSymptoms) setInitialSymptoms(parsed.initialSymptoms);
+    if (parsed.status && STATUS_COLORS[parsed.status]) setSelectedStatus(parsed.status);
+    sheetRef.current?.snapToIndex(1);
   }
 
   function handleClearAll() {
@@ -286,6 +515,12 @@ export default function InjuryScreen() {
         )}
       </ScrollView>
 
+      <VoiceOverlay
+        visible={voiceVisible}
+        onClose={() => setVoiceVisible(false)}
+        onResult={handleVoiceResult}
+      />
+
       {/* Bottom Sheet */}
       <BottomSheet
         ref={sheetRef}
@@ -316,8 +551,17 @@ export default function InjuryScreen() {
               )}
             </View>
             {sheetMode === 'add' && (
-              <View style={styles.sheetAddBadge}>
-                <Text style={styles.sheetAddBadgeText}>LOG INJURY</Text>
+              <View style={styles.sheetHeaderRight}>
+                <TouchableOpacity
+                  style={styles.micTriggerBtn}
+                  onPress={() => setVoiceVisible(true)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="mic-outline" size={16} color={HUD.cyan} />
+                </TouchableOpacity>
+                <View style={styles.sheetAddBadge}>
+                  <Text style={styles.sheetAddBadgeText}>LOG INJURY</Text>
+                </View>
               </View>
             )}
           </View>
@@ -719,6 +963,21 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 1,
   },
+  sheetHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  micTriggerBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: `${HUD.cyan}60`,
+    backgroundColor: `${HUD.cyan}15`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   sheetAddBadge: {
     borderWidth: 1,
     borderColor: `${HUD.cyan}50`,
@@ -887,5 +1146,152 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 2,
+  },
+});
+
+const voiceStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(8,12,20,0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  panel: {
+    width: '100%',
+    backgroundColor: '#0d1623',
+    borderWidth: 1,
+    borderColor: HUD.border,
+    borderRadius: 4,
+    padding: 24,
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  topLine: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1.5,
+    opacity: 0.8,
+  },
+  cornerH: {
+    position: 'absolute',
+    width: 16,
+    height: 1.5,
+    backgroundColor: HUD.cyan,
+    opacity: 0.7,
+  },
+  cornerV: {
+    position: 'absolute',
+    width: 1.5,
+    height: 16,
+    backgroundColor: HUD.cyan,
+    opacity: 0.7,
+  },
+  closeBtn: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    padding: 4,
+  },
+  title: {
+    fontFamily: HUD.mono,
+    fontSize: 14,
+    fontWeight: '700',
+    color: HUD.cyan,
+    letterSpacing: 3,
+    marginBottom: 8,
+    marginTop: 8,
+    ...(Platform.OS === 'ios' && {
+      textShadowColor: HUD.cyan,
+      textShadowOffset: { width: 0, height: 0 },
+      textShadowRadius: 6,
+    }),
+  },
+  hint: {
+    fontFamily: HUD.mono,
+    fontSize: 9,
+    color: HUD.muted,
+    letterSpacing: 0.8,
+    textAlign: 'center',
+    lineHeight: 15,
+    marginBottom: 28,
+  },
+  micArea: {
+    width: 100,
+    height: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  pulseRing: {
+    position: 'absolute',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 1.5,
+    opacity: 0.5,
+  },
+  micBtn: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusText: {
+    fontFamily: HUD.mono,
+    fontSize: 10,
+    letterSpacing: 2,
+    marginBottom: 16,
+  },
+  transcriptBox: {
+    width: '100%',
+    backgroundColor: `${HUD.cyan}08`,
+    borderWidth: 1,
+    borderColor: `${HUD.cyan}30`,
+    borderRadius: 4,
+    padding: 12,
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  transcriptAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 2,
+    opacity: 0.7,
+  },
+  transcriptText: {
+    fontFamily: HUD.mono,
+    fontSize: 12,
+    color: HUD.text,
+    lineHeight: 18,
+    letterSpacing: 0.3,
+  },
+  errorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  errorText: {
+    fontFamily: HUD.mono,
+    fontSize: 10,
+    color: HUD.danger,
+    flex: 1,
+    letterSpacing: 0.5,
+  },
+  example: {
+    fontFamily: HUD.mono,
+    fontSize: 9,
+    color: HUD.muted,
+    textAlign: 'center',
+    lineHeight: 15,
+    opacity: 0.6,
+    letterSpacing: 0.3,
   },
 });
