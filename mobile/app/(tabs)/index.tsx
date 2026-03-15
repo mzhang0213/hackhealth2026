@@ -112,7 +112,6 @@ const sepStyles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
   },
   lineLeft: {
     flex: 1,
