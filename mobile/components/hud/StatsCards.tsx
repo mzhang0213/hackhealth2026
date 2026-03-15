@@ -2,6 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { HUD } from '@/constants/hud-theme';
+import { api } from '@/constants/api';
+import { useUser } from '@/context/UserContext';
 
 interface StatDef {
   label: string;
@@ -11,12 +13,23 @@ interface StatDef {
   change?: string;
 }
 
-function buildStats(recoveryDay: number): StatDef[] {
+function buildStats(
+  recoveryDay: number,
+  streakDays: number,
+  streakChange: number,
+  mobilityIndex: number,
+  mobilityChange: number,
+  painReduction: number,
+  painChange: number,
+): StatDef[] {
   return [
-    { label: 'RECOVERY DAY', value: recoveryDay, icon: 'calendar-outline', color: HUD.cyan },
-    { label: 'STREAK ACTIVE', value: 12, change: '+3', icon: 'flame-outline', color: HUD.warning },
-    { label: 'MOBILITY INDEX', value: 78, change: '+5%', icon: 'analytics-outline', color: HUD.success },
-    { label: 'PAIN REDUCTION', value: 62, change: '+8%', icon: 'trending-up-outline', color: HUD.cyan },
+    { label: 'RECOVERY DAY',  value: recoveryDay,    icon: 'calendar-outline',     color: HUD.cyan },
+    { label: 'STREAK ACTIVE', value: streakDays,      icon: 'flame-outline',        color: HUD.warning,
+      change: streakChange > 0 ? `+${streakChange}` : undefined },
+    { label: 'MOBILITY INDEX', value: mobilityIndex,  icon: 'analytics-outline',    color: HUD.success,
+      change: mobilityChange !== 0 ? `${mobilityChange > 0 ? '+' : ''}${mobilityChange}%` : undefined },
+    { label: 'PAIN REDUCTION', value: painReduction,  icon: 'trending-up-outline',  color: HUD.cyan,
+      change: painChange !== 0 ? `${painChange > 0 ? '+' : ''}${painChange}%` : undefined },
   ];
 }
 
@@ -63,21 +76,11 @@ function StatCard({ stat }: { stat: StatDef }) {
     return () => clearInterval(interval);
   }, [stat.value]);
 
-  const numberGlowStyle: ViewStyle =
-    Platform.OS === 'ios'
-      ? ({
-          textShadowColor: stat.color,
-          textShadowOffset: { width: 0, height: 0 },
-          textShadowRadius: 8,
-        } as unknown as ViewStyle)
-      : {};
-
   return (
     <View style={[styles.card, { borderColor: HUD.border }]}>
       <CornerAccentTL color={stat.color} />
       <CornerAccentBR color={stat.color} />
 
-      {/* Top row: icon + change badge */}
       <View style={styles.topRow}>
         <View style={[styles.iconBox, { borderColor: `${stat.color}40`, backgroundColor: `${stat.color}12` }]}>
           <Ionicons name={stat.icon} size={14} color={stat.color} />
@@ -89,7 +92,6 @@ function StatCard({ stat }: { stat: StatDef }) {
         ) : null}
       </View>
 
-      {/* Number */}
       <Text
         style={[
           styles.number,
@@ -104,14 +106,42 @@ function StatCard({ stat }: { stat: StatDef }) {
         {padNum(displayValue)}
       </Text>
 
-      {/* Label */}
       <Text style={styles.label}>{stat.label}</Text>
     </View>
   );
 }
 
 export default function StatsCards({ recoveryDay = 0 }: { recoveryDay?: number }) {
-  const stats = buildStats(recoveryDay);
+  const { user } = useUser();
+  const [streakDays, setStreakDays]           = useState(0);
+  const [streakChange, setStreakChange]       = useState(0);
+  const [mobilityIndex, setMobilityIndex]     = useState(0);
+  const [mobilityChange, setMobilityChange]   = useState(0);
+  const [painReduction, setPainReduction]     = useState(0);
+  const [painChange, setPainChange]           = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    api.getStats(user.id)
+      .then((s) => {
+        setStreakDays(s.streak_days);
+        setStreakChange(s.streak_change);
+        setMobilityIndex(s.mobility_index);
+        setMobilityChange(s.mobility_change);
+        setPainReduction(s.pain_reduction);
+        setPainChange(s.pain_change);
+      })
+      .catch(() => {});
+  }, [user?.id]);
+
+  const effectiveRecoveryDay = user?.recovery_day ?? recoveryDay;
+  const stats = buildStats(
+    effectiveRecoveryDay,
+    streakDays, streakChange,
+    mobilityIndex, mobilityChange,
+    painReduction, painChange,
+  );
+
   return (
     <View style={styles.grid}>
       {stats.map((stat) => (

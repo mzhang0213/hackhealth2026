@@ -1,33 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState } from 'react';
-import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { HUD } from '@/constants/hud-theme';
+import { api, type ExerciseItem } from '@/constants/api';
+import { useUser } from '@/context/UserContext';
 
 type Category = 'stretch' | 'strength' | 'mobility';
-
-interface Exercise {
-  id: string;
-  name: string;
-  sets: number;
-  reps: number;
-  duration?: string;
-  done: boolean;
-  cat: Category;
-}
-
-const INITIAL_EXERCISES: Exercise[] = [
-  { id: '1', name: 'QUAD_STRETCH', sets: 3, reps: 30, duration: '30s', done: true, cat: 'stretch' },
-  { id: '2', name: 'LEG_RAISES', sets: 3, reps: 15, done: true, cat: 'strength' },
-  { id: '3', name: 'KNEE_FLEXION', sets: 3, reps: 20, done: false, cat: 'mobility' },
-  { id: '4', name: 'WALL_SLIDES', sets: 2, reps: 12, done: false, cat: 'mobility' },
-  { id: '5', name: 'CALF_RAISES', sets: 3, reps: 15, done: false, cat: 'strength' },
-];
 
 function catColor(cat: Category): string {
   switch (cat) {
     case 'mobility': return HUD.cyan;
     case 'strength': return HUD.success;
-    case 'stretch': return HUD.warning;
+    case 'stretch':  return HUD.warning;
   }
 }
 
@@ -35,24 +19,63 @@ function catIcon(cat: Category): keyof typeof Ionicons.glyphMap {
   switch (cat) {
     case 'mobility': return 'time-outline';
     case 'strength': return 'barbell-outline';
-    case 'stretch': return 'body-outline';
+    case 'stretch':  return 'body-outline';
   }
 }
 
 export default function ExerciseTracker() {
-  const [exercises, setExercises] = useState<Exercise[]>(INITIAL_EXERCISES);
+  const { user } = useUser();
+  const [exercises, setExercises] = useState<ExerciseItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    api.getTodayExercises(user.id)
+      .then(setExercises)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [user?.id]);
+
+  async function toggle(id: string) {
+    if (!user) return;
+    // Optimistic update
+    setExercises((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, completed: !e.completed } : e)),
+    );
+    try {
+      const res = await api.toggleExercise(user.id, id);
+      setExercises((prev) =>
+        prev.map((e) => (e.id === id ? { ...e, completed: res.completed } : e)),
+      );
+    } catch {
+      // Revert on error
+      setExercises((prev) =>
+        prev.map((e) => (e.id === id ? { ...e, completed: !e.completed } : e)),
+      );
+    }
+  }
 
   const total = exercises.length;
-  const doneCount = exercises.filter((e) => e.done).length;
+  const doneCount = exercises.filter((e) => e.completed).length;
+  const allDone = total > 0 && doneCount === total;
+  const activeColor = allDone ? HUD.success : HUD.cyan;
 
-  function toggle(id: string) {
-    setExercises((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, done: !e.done } : e)),
+  if (loading) {
+    return (
+      <View style={styles.loadingRow}>
+        <ActivityIndicator size="small" color={HUD.cyan} />
+        <Text style={styles.loadingText}>LOADING PROTOCOL...</Text>
+      </View>
     );
   }
 
-  const allDone = doneCount === total;
-  const activeColor = allDone ? HUD.success : HUD.cyan;
+  if (exercises.length === 0) {
+    return (
+      <View style={styles.emptyRow}>
+        <Text style={styles.emptyText}>NO EXERCISES SCHEDULED TODAY</Text>
+      </View>
+    );
+  }
 
   return (
     <View>
@@ -75,9 +98,9 @@ export default function ExerciseTracker() {
             style={[
               styles.segment,
               {
-                backgroundColor: e.done ? activeColor : `${activeColor}18`,
-                borderColor: e.done ? activeColor : HUD.border,
-                ...(e.done && Platform.OS === 'ios'
+                backgroundColor: e.completed ? activeColor : `${activeColor}18`,
+                borderColor: e.completed ? activeColor : HUD.border,
+                ...(e.completed && Platform.OS === 'ios'
                   ? {
                       shadowColor: activeColor,
                       shadowOffset: { width: 0, height: 0 },
@@ -95,7 +118,7 @@ export default function ExerciseTracker() {
       <View style={styles.list}>
         {exercises.map((ex, idx) => {
           const color = catColor(ex.cat);
-          const borderStyle = ex.done
+          const borderStyle = ex.completed
             ? {
                 borderColor: `${color}50`,
                 ...(Platform.OS === 'ios'
@@ -116,23 +139,20 @@ export default function ExerciseTracker() {
               activeOpacity={0.75}
               style={[styles.row, borderStyle]}
             >
-              {/* Index */}
               <Text style={[styles.index, { color: HUD.muted }]}>
                 {String(idx + 1).padStart(2, '0')}
               </Text>
 
-              {/* Icon */}
               <View style={[styles.catIcon, { borderColor: `${color}40`, backgroundColor: `${color}12` }]}>
                 <Ionicons name={catIcon(ex.cat)} size={13} color={color} />
               </View>
 
-              {/* Name + sets */}
               <View style={styles.nameCol}>
                 <Text
                   style={[
                     styles.exName,
-                    ex.done && styles.doneName,
-                    ex.done && { color: HUD.muted },
+                    ex.completed && styles.doneName,
+                    ex.completed && { color: HUD.muted },
                   ]}
                 >
                   {ex.name}
@@ -142,12 +162,11 @@ export default function ExerciseTracker() {
                 </Text>
               </View>
 
-              {/* Status dot */}
               <View
                 style={[
                   styles.statusDot,
                   {
-                    backgroundColor: ex.done ? color : 'transparent',
+                    backgroundColor: ex.completed ? color : 'transparent',
                     borderColor: color,
                   },
                 ]}
@@ -161,6 +180,28 @@ export default function ExerciseTracker() {
 }
 
 const styles = StyleSheet.create({
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+  },
+  loadingText: {
+    fontFamily: HUD.mono,
+    fontSize: 9,
+    color: HUD.muted,
+    letterSpacing: 1.5,
+  },
+  emptyRow: {
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontFamily: HUD.mono,
+    fontSize: 9,
+    color: HUD.muted,
+    letterSpacing: 1.5,
+  },
   dailyLabel: {
     fontFamily: HUD.mono,
     fontSize: 11,

@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Modal,
   Platform,
   ScrollView,
@@ -12,76 +13,30 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { HUD } from '@/constants/hud-theme';
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-type Exercise = {
-  id: string;
-  name: string;
-  accentColor: string;
-  isRehab?: boolean;
-};
-
-type DaySection = {
-  dayAbbr: string;
-  dayNum: string;
-  month: string;
-  exercises: Exercise[];
-};
-
-// ── Sample data ───────────────────────────────────────────────────────────────
-
-const SECTIONS: DaySection[] = [
-  {
-    dayAbbr: 'Tue',
-    dayNum: '17',
-    month: 'Mar',
-    exercises: [
-      { id: '1', name: 'Quad Sets', accentColor: HUD.danger },
-      { id: '2', name: 'Heel Slides', accentColor: HUD.success },
-      { id: '3', name: 'Compound Stretches', accentColor: HUD.warning },
-      { id: '4', name: 'Rehab Check', accentColor: HUD.cyan, isRehab: true },
-    ],
-  },
-  {
-    dayAbbr: 'Wed',
-    dayNum: '18',
-    month: 'Mar',
-    exercises: [
-      { id: '5', name: 'Straight Leg Raises', accentColor: HUD.danger },
-      { id: '6', name: 'Step-Ups', accentColor: HUD.cyan },
-    ],
-  },
-  {
-    dayAbbr: 'Thu',
-    dayNum: '19',
-    month: 'Mar',
-    exercises: [
-      { id: '7', name: 'Hip Abduction', accentColor: HUD.success },
-      { id: '8', name: 'Calf Raises', accentColor: HUD.warning },
-    ],
-  },
-  {
-    dayAbbr: 'Fri',
-    dayNum: '20',
-    month: 'Mar',
-    exercises: [
-      { id: '9', name: 'Balance Board', accentColor: HUD.danger },
-      { id: '10', name: 'PWC Event', accentColor: HUD.cyan },
-    ],
-  },
-];
+import { api, type DaySection, type ExerciseItem } from '@/constants/api';
+import { useUser } from '@/context/UserContext';
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 export default function ExercisesScreen() {
+  const { user } = useUser();
+  const [sections, setSections] = useState<DaySection[]>([]);
+  const [loading, setLoading] = useState(true);
   const [cameraModal, setCameraModal] = useState(false);
   const [videoModal, setVideoModal] = useState(false);
-  const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
+  const [selectedExercise, setSelectedExercise] = useState<ExerciseItem | null>(null);
 
-  function handleExercisePress(ex: Exercise, isRehab: boolean | undefined) {
+  useEffect(() => {
+    if (!user) return;
+    api.getExerciseSchedule(user.id)
+      .then(setSections)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [user?.id]);
+
+  function handleExercisePress(ex: ExerciseItem) {
     setSelectedExercise(ex);
-    if (isRehab) {
+    if (ex.is_rehab) {
       setCameraModal(true);
     } else {
       setVideoModal(true);
@@ -125,14 +80,27 @@ export default function ExercisesScreen() {
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
       >
-        {SECTIONS.map((section, si) => (
+        {loading && (
+          <View style={styles.loadingRow}>
+            <ActivityIndicator size="small" color={HUD.cyan} />
+            <Text style={styles.loadingText}>LOADING SCHEDULE...</Text>
+          </View>
+        )}
+
+        {!loading && sections.length === 0 && (
+          <View style={styles.emptyRow}>
+            <Text style={styles.emptyText}>NO EXERCISES SCHEDULED</Text>
+          </View>
+        )}
+
+        {sections.map((section, si) => (
           <View key={si} style={styles.section}>
             <View style={styles.row}>
               {/* Date bubble */}
               <View style={styles.dayBubbleCol}>
                 <View style={styles.dayBubble}>
-                  <Text style={styles.dayAbbr}>{section.dayAbbr.toUpperCase()}</Text>
-                  <Text style={styles.dayNum}>{section.dayNum}</Text>
+                  <Text style={styles.dayAbbr}>{section.day_abbr.toUpperCase()}</Text>
+                  <Text style={styles.dayNum}>{section.day_num}</Text>
                   <Text style={styles.dayMonth}>{section.month.toUpperCase()}</Text>
                 </View>
               </View>
@@ -142,21 +110,20 @@ export default function ExercisesScreen() {
                 {section.exercises.map((ex) => (
                   <TouchableOpacity
                     key={ex.id}
-                    style={[styles.exerciseCard, ex.isRehab && styles.rehabCard]}
-                    onPress={() => handleExercisePress(ex, ex.isRehab)}
+                    style={[styles.exerciseCard, ex.is_rehab && styles.rehabCard]}
+                    onPress={() => handleExercisePress(ex)}
                     activeOpacity={0.75}
                   >
-                    {/* Left accent bar */}
-                    <View style={[styles.accentBar, { backgroundColor: ex.accentColor }]} />
+                    <View style={[styles.accentBar, { backgroundColor: ex.accent_color }]} />
 
-                    <Text style={[styles.exerciseName, ex.isRehab && styles.rehabName]}>
+                    <Text style={[styles.exerciseName, ex.is_rehab && styles.rehabName]}>
                       {ex.name.toUpperCase()}
                     </Text>
 
                     <Ionicons
-                      name={ex.isRehab ? 'scan-outline' : 'play-circle-outline'}
+                      name={ex.is_rehab ? 'scan-outline' : 'play-circle-outline'}
                       size={16}
-                      color={ex.isRehab ? '#fff' : ex.accentColor}
+                      color={ex.is_rehab ? '#fff' : ex.accent_color}
                       style={styles.exerciseIcon}
                     />
                   </TouchableOpacity>
@@ -164,8 +131,7 @@ export default function ExercisesScreen() {
               </View>
             </View>
 
-            {/* Section divider */}
-            {si < SECTIONS.length - 1 && <View style={styles.divider} />}
+            {si < sections.length - 1 && <View style={styles.divider} />}
           </View>
         ))}
       </ScrollView>
@@ -279,7 +245,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  list: { paddingHorizontal: 16, paddingBottom: 32 },
+  list: { paddingHorizontal: 16, paddingBottom: 32, paddingTop: 8 },
+  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 24, justifyContent: 'center' },
+  loadingText: { fontFamily: HUD.mono, fontSize: 9, color: HUD.muted, letterSpacing: 1.5 },
+  emptyRow: { paddingVertical: 40, alignItems: 'center' },
+  emptyText: { fontFamily: HUD.mono, fontSize: 9, color: HUD.muted, letterSpacing: 1.5 },
   section: { marginBottom: 4 },
   divider: { height: 1, backgroundColor: HUD.cyan, opacity: 0.08, marginVertical: 10 },
 

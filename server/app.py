@@ -1,17 +1,23 @@
 import json
 import os
 import pickle
+from dotenv import load_dotenv
+load_dotenv()
 import threading
 import time
 import uuid
 import warnings
-from datetime import date, datetime
+from collections import defaultdict
+from datetime import date, datetime, timedelta
 from typing import Optional
 
-import cv as cv
+from supabase import create_client, Client
+
+import cv2 as cv
 import numpy as np
-import google.generativeai as genai
-from fastapi import FastAPI, HTTPException
+import google as genai
+import jwt as pyjwt
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -41,8 +47,34 @@ DB_FILE    = os.path.join(SERVER_DIR, "db.json")
 with open(os.path.join(CV_DIR, "clinical_ai_model.pkl"), "rb") as f:
     clinical_model = pickle.load(f)
 
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "AIzaSyD-oADg2AMo_HX-OL2lHolIA-QZ457WEXw"))
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 llm = genai.GenerativeModel("gemini-pro")
+
+# ── Supabase ──────────────────────────────────────────────────────────────────
+
+supabase: Client = create_client(
+    os.environ["SUPABASE_URL"],
+    os.environ["SUPABASE_KEY"],
+)
+
+SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
+
+
+def verify_token(authorization: str = Header(default="")) -> str:
+    """Verify Supabase JWT and return the user's UUID (sub claim)."""
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    token = authorization.removeprefix("Bearer ")
+    try:
+        payload = pyjwt.decode(
+            token,
+            SUPABASE_JWT_SECRET,
+            algorithms=["HS256"],
+            audience="authenticated",
+        )
+        return str(payload["sub"])
+    except pyjwt.PyJWTError as exc:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {exc}")
 
 pose_model = YOLO(os.path.join(CV_DIR, "yolov8m-pose.pt"))
 try:
@@ -198,6 +230,7 @@ def build_profile(raw: dict) -> "UserProfile":
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
 class UserCreate(BaseModel):
+    id: Optional[str] = None   # Supabase user.id — if omitted a UUID is generated
     name: str
     sport: str
     injury_description: str
@@ -226,6 +259,11 @@ class AnalyzeRangeRequest(BaseModel):
     previous_rom: Optional[float] = None
 
 
+class CheckinCreate(BaseModel):
+    pain_level: int
+    symptoms: list[str] = []
+
+
 # ── Routes: general ───────────────────────────────────────────────────────────
 
 @app.get("/")
@@ -238,8 +276,9 @@ def root():
 @app.post("/users", response_model=UserProfile, status_code=201)
 def create_user(payload: UserCreate):
     db = load_db()
-    user_id = str(uuid.uuid4())
-    raw = {"id": user_id, "created_at": datetime.utcnow().isoformat(), **payload.model_dump()}
+    user_id = payload.id or str(uuid.uuid4())
+    data = {k: v for k, v in payload.model_dump().items() if k != "id"}
+    raw = {"id": user_id, "created_at": datetime.utcnow().isoformat(), **data}
     db["users"][user_id] = raw
     save_db(db)
     return build_profile(raw)
@@ -345,3 +384,162 @@ def analyze_range(payload: AnalyzeRangeRequest):
         "filename": filename,
         "raw_data": history,
     }
+
+
+# ── Routes: exercises (Supabase) ──────────────────────────────────────────────
+
+@app.get("/users/{user_id}/exercises/today")
+def get_today_exercises(user_id: str, _uid: str = Depends(verify_token)):
+    today = date.today().isoformat()
+    res = (
+        supabase.table("exercises")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("scheduled_date", today)
+        .order("created_at")
+        .execute()
+    )
+    return res.data
+
+
+@app.patch("/users/{user_id}/exercises/{exercise_id}/complete")
+def toggle_exercise(user_id: str, exercise_id: str, _uid: str = Depends(verify_token)):
+    res = (
+        supabase.table("exercises")
+        .select("completed")
+        .eq("id", exercise_id)
+        .eq("user_id", user_id)
+        .single()
+        .execute()
+    )
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Exercise not found")
+    new_val = not res.data["completed"]
+    completed_at = datetime.utcnow().isoformat() if new_val else None
+    supabase.table("exercises").update(
+        {"completed": new_val, "completed_at": completed_at}
+    ).eq("id", exercise_id).execute()
+    return {"completed": new_val}
+
+
+@app.get("/users/{user_id}/exercises/schedule")
+def get_exercise_schedule(user_id: str, _uid: str = Depends(verify_token)):
+    from_date = date.today().isoformat()
+    res = (
+        supabase.table("exercises")
+        .select("*")
+        .eq("user_id", user_id)
+        .gte("scheduled_date", from_date)
+        .order("scheduled_date")
+        .execute()
+    )
+    grouped: dict = defaultdict(list)
+    for ex in res.data:
+        grouped[ex["scheduled_date"]].append(ex)
+    sections = []
+    for d_str, exs in sorted(grouped.items()):
+        d = date.fromisoformat(d_str)
+        sections.append({
+            "day_abbr": d.strftime("%a"),
+            "day_num": str(d.day),
+            "month": d.strftime("%b"),
+            "exercises": exs,
+        })
+    return sections
+
+
+# ── Routes: checkins (Supabase) ───────────────────────────────────────────────
+
+@app.post("/users/{user_id}/checkins", status_code=201)
+def create_checkin(user_id: str, payload: CheckinCreate, _uid: str = Depends(verify_token)):
+    row = {
+        "user_id": user_id,
+        "pain_level": payload.pain_level,
+        "symptoms": payload.symptoms,
+    }
+    res = supabase.table("checkins").insert(row).execute()
+    return res.data[0]
+
+
+# ── Routes: stats & metrics (Supabase) ────────────────────────────────────────
+
+@app.get("/users/{user_id}/stats")
+def get_stats(user_id: str, _uid: str = Depends(verify_token)):
+    # Streak: count consecutive days (from today backwards) with ≥1 completed exercise
+    rows = (
+        supabase.table("exercises")
+        .select("scheduled_date,completed")
+        .eq("user_id", user_id)
+        .order("scheduled_date", desc=True)
+        .execute()
+    )
+    day_done: dict[str, bool] = {}
+    for ex in rows.data:
+        day_done.setdefault(ex["scheduled_date"], False)
+        if ex["completed"]:
+            day_done[ex["scheduled_date"]] = True
+
+    streak = 0
+    check = date.today()
+    for d_str in sorted(day_done, reverse=True):
+        d = date.fromisoformat(d_str)
+        if d == check and day_done[d_str]:
+            streak += 1
+            check = d - timedelta(days=1)
+        elif d == check:
+            break
+
+    # Latest two metric records for trend deltas
+    metrics = (
+        supabase.table("recovery_metrics")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("recorded_at", desc=True)
+        .limit(2)
+        .execute()
+    )
+    mobility_index = 0
+    mobility_change = 0
+    pain_reduction = 0
+    pain_change = 0
+    if metrics.data:
+        latest = metrics.data[0]
+        mobility_index = int(latest.get("mobility_score", 0))
+        pain_reduction = int(100 - latest.get("pain_score", 0))
+        if len(metrics.data) > 1:
+            prev = metrics.data[1]
+            mobility_change = int(
+                latest.get("mobility_score", 0) - prev.get("mobility_score", 0)
+            )
+            pain_change = int(
+                prev.get("pain_score", 0) - latest.get("pain_score", 0)
+            )
+
+    return {
+        "streak_days": streak,
+        "streak_change": 1,
+        "mobility_index": mobility_index,
+        "mobility_change": mobility_change,
+        "pain_reduction": pain_reduction,
+        "pain_change": pain_change,
+    }
+
+
+@app.get("/users/{user_id}/metrics/history")
+def get_metrics_history(user_id: str, _uid: str = Depends(verify_token)):
+    res = (
+        supabase.table("recovery_metrics")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("recorded_at")
+        .execute()
+    )
+    return [
+        {
+            "week": r["week_label"],
+            "pain": r["pain_score"],
+            "mobility": r["mobility_score"],
+            "strength": r["strength_score"],
+        }
+        for r in res.data
+    ]

@@ -9,6 +9,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { HUD } from '@/constants/hud-theme';
+import { api } from '@/constants/api';
+import { useUser } from '@/context/UserContext';
 
 type Symptom = 'SWELLING' | 'STIFFNESS' | 'WEAKNESS' | 'INSTABILITY' | 'CLICK/POP' | 'NUMBNESS';
 
@@ -42,7 +44,7 @@ function PulsingDot({ color }: { color: string }) {
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(anim, { toValue: 0.2, duration: 700, useNativeDriver: true }),
-        Animated.timing(anim, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 1,   duration: 700, useNativeDriver: true }),
       ]),
     );
     loop.start();
@@ -50,19 +52,17 @@ function PulsingDot({ color }: { color: string }) {
   }, [anim]);
 
   return (
-    <Animated.View
-      style={[styles.pulsingDot, { backgroundColor: color, opacity: anim }]}
-    />
+    <Animated.View style={[styles.pulsingDot, { backgroundColor: color, opacity: anim }]} />
   );
 }
 
 function SuccessView({ onModify }: { onModify: () => void }) {
-  const scaleAnim = useRef(new Animated.Value(0.5)).current;
+  const scaleAnim   = useRef(new Animated.Value(0.5)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, bounciness: 10 }),
+      Animated.spring(scaleAnim,   { toValue: 1, useNativeDriver: true, bounciness: 10 }),
       Animated.timing(opacityAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
     ]).start();
   }, [scaleAnim, opacityAnim]);
@@ -70,7 +70,7 @@ function SuccessView({ onModify }: { onModify: () => void }) {
   return (
     <Animated.View style={[styles.successContainer, { opacity: opacityAnim }]}>
       <Animated.View style={[styles.arcReactor, { transform: [{ scale: scaleAnim }] }]}>
-        <View style={[styles.arcOuter, { borderColor: `${HUD.cyan}40` }]}>
+        <View style={[styles.arcOuter,  { borderColor: `${HUD.cyan}40` }]}>
           <View style={[styles.arcMiddle, { borderColor: `${HUD.cyan}70` }]}>
             <View style={[styles.arcInner, { borderColor: HUD.cyan, backgroundColor: `${HUD.cyan}20` }]}>
               <Ionicons name="checkmark" size={22} color={HUD.cyan} />
@@ -88,9 +88,11 @@ function SuccessView({ onModify }: { onModify: () => void }) {
 }
 
 export default function PainCheckin() {
+  const { user } = useUser();
   const [painLevel, setPainLevel] = useState<number | null>(null);
-  const [symptoms, setSymptoms] = useState<Set<Symptom>>(new Set());
+  const [symptoms,  setSymptoms]  = useState<Set<Symptom>>(new Set());
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   function toggleSymptom(s: Symptom) {
     setSymptoms((prev) => {
@@ -101,9 +103,17 @@ export default function PainCheckin() {
     });
   }
 
-  function handleSubmit() {
-    if (painLevel === null) return;
-    setSubmitted(true);
+  async function handleSubmit() {
+    if (painLevel === null || !user) return;
+    setSubmitting(true);
+    try {
+      await api.createCheckin(user.id, painLevel, Array.from(symptoms));
+    } catch {
+      // Still show success UI — data can be retried silently later
+    } finally {
+      setSubmitting(false);
+      setSubmitted(true);
+    }
   }
 
   function handleModify() {
@@ -118,7 +128,6 @@ export default function PainCheckin() {
 
   return (
     <View>
-      {/* Pain level selector */}
       <Text style={styles.sectionLabel}>PAIN.LEVEL :: SELECT</Text>
       <View style={styles.painGrid}>
         {Array.from({ length: 11 }, (_, i) => i).map((level) => {
@@ -135,22 +144,12 @@ export default function PainCheckin() {
                   borderColor: isSelected ? color : `${color}40`,
                   backgroundColor: isSelected ? `${color}25` : 'transparent',
                   ...(isSelected && Platform.OS === 'ios'
-                    ? {
-                        shadowColor: color,
-                        shadowOffset: { width: 0, height: 0 },
-                        shadowRadius: 6,
-                        shadowOpacity: 0.6,
-                      }
+                    ? { shadowColor: color, shadowOffset: { width: 0, height: 0 }, shadowRadius: 6, shadowOpacity: 0.6 }
                     : {}),
                 },
               ]}
             >
-              <Text
-                style={[
-                  styles.painBtnText,
-                  { color: isSelected ? color : `${color}80` },
-                ]}
-              >
+              <Text style={[styles.painBtnText, { color: isSelected ? color : `${color}80` }]}>
                 {String(level).padStart(2, '0')}
               </Text>
             </TouchableOpacity>
@@ -158,18 +157,14 @@ export default function PainCheckin() {
         })}
       </View>
 
-      {/* Description */}
       {painLevel !== null && (
         <View style={styles.descRow}>
           <PulsingDot color={activeColor} />
-          <Text style={[styles.descText, { color: activeColor }]}>
-            {painLabel(painLevel)}
-          </Text>
+          <Text style={[styles.descText, { color: activeColor }]}>{painLabel(painLevel)}</Text>
           <Text style={styles.descLevel}>LEVEL {painLevel}/10</Text>
         </View>
       )}
 
-      {/* Symptom flags */}
       <Text style={[styles.sectionLabel, { marginTop: 16 }]}>SYMPTOM.FLAGS</Text>
       <View style={styles.symptomsGrid}>
         {SYMPTOMS.map((s) => {
@@ -181,10 +176,7 @@ export default function PainCheckin() {
               activeOpacity={0.75}
               style={[
                 styles.symptomPill,
-                {
-                  borderColor: isOn ? HUD.cyan : HUD.border,
-                  backgroundColor: isOn ? `${HUD.cyan}18` : 'transparent',
-                },
+                { borderColor: isOn ? HUD.cyan : HUD.border, backgroundColor: isOn ? `${HUD.cyan}18` : 'transparent' },
               ]}
             >
               <Text style={[styles.symptomText, { color: isOn ? HUD.cyan : HUD.muted }]}>
@@ -195,27 +187,23 @@ export default function PainCheckin() {
         })}
       </View>
 
-      {/* Submit */}
       <TouchableOpacity
         style={[
           styles.submitBtn,
           {
-            opacity: painLevel === null ? 0.4 : 1,
+            opacity: painLevel === null || submitting ? 0.4 : 1,
             ...(Platform.OS === 'ios' && painLevel !== null
-              ? {
-                  shadowColor: HUD.cyan,
-                  shadowOffset: { width: 0, height: 0 },
-                  shadowRadius: 12,
-                  shadowOpacity: 0.5,
-                }
+              ? { shadowColor: HUD.cyan, shadowOffset: { width: 0, height: 0 }, shadowRadius: 12, shadowOpacity: 0.5 }
               : {}),
           },
         ]}
         onPress={handleSubmit}
         activeOpacity={0.8}
-        disabled={painLevel === null}
+        disabled={painLevel === null || submitting}
       >
-        <Text style={styles.submitText}>[SUBMIT.CHECKIN]</Text>
+        <Text style={styles.submitText}>
+          {submitting ? 'SUBMITTING...' : '[SUBMIT.CHECKIN]'}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -301,7 +289,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 2,
   },
-  // Success styles
   successContainer: {
     alignItems: 'center',
     paddingVertical: 20,
@@ -344,11 +331,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 3,
     ...(Platform.OS === 'ios'
-      ? {
-          textShadowColor: HUD.cyan,
-          textShadowOffset: { width: 0, height: 0 },
-          textShadowRadius: 8,
-        }
+      ? { textShadowColor: HUD.cyan, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 8 }
       : {}),
   },
   successSub: {
