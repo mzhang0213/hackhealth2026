@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
 
 import { HUD } from '@/constants/hud-theme';
+import { API_BASE } from '@/constants/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,20 +34,14 @@ interface ProviderCard {
   coords?: [number, number]; // [lat, lng]
 }
 
-// ─── NPI Registry API ─────────────────────────────────────────────────────────
+// ─── Backend-proxied NPI search ───────────────────────────────────────────────
 
 async function searchPTs(zipCode: string): Promise<ProviderCard[]> {
-  const params = new URLSearchParams({
-    taxonomy_description: 'Physical Therapist',
-    postal_code: zipCode,
-    limit: '20',
-    version: '2.1',
-  });
-  const res = await fetch(`https://npiregistry.cms.hhs.gov/api/?${params}`);
-  if (!res.ok) throw new Error(`NPI API error: ${res.status}`);
-  const data = await res.json();
+  const res = await fetch(`${API_BASE}/pt-search?zip=${zipCode}&limit=20`);
+  if (!res.ok) throw new Error(`PT search error: ${res.status}`);
+  const results: any[] = await res.json();
 
-  return (data.results ?? []).map((r: any) => {
+  return results.map((r: any) => {
     const basic = r.basic ?? {};
     const name = basic.organization_name
       ? basic.organization_name
@@ -71,34 +66,22 @@ async function searchPTs(zipCode: string): Promise<ProviderCard[]> {
   });
 }
 
-// ─── Nominatim geocoding ──────────────────────────────────────────────────────
+// ─── Backend-proxied batch geocoding ─────────────────────────────────────────
 
-async function geocodeAddress(p: ProviderCard): Promise<[number, number] | null> {
-  try {
-    const q = [p.address, p.city, p.state, p.zip].filter(Boolean).join(', ');
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=us`;
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'ReboundRecoveryApp/1.0' },
-    });
-    const data = await res.json();
-    if (data.length > 0) return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-  } catch {}
-  return null;
-}
-
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-async function geocodeAll(providers: ProviderCard[]): Promise<ProviderCard[]> {
-  const result: ProviderCard[] = [];
-  for (let i = 0; i < providers.length; i++) {
-    const coords = await geocodeAddress(providers[i]);
-    result.push({ ...providers[i], coords: coords ?? undefined });
-    // Nominatim rate limit: 1 req/sec
-    if (i < providers.length - 1) await sleep(1100);
-  }
-  return result;
+async function batchGeocode(providers: ProviderCard[]): Promise<ProviderCard[]> {
+  const addresses = providers.map((p) =>
+    [p.address, p.city, p.state, p.zip].filter(Boolean).join(', ')
+  );
+  const res = await fetch(`${API_BASE}/geocode/batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ addresses }),
+  });
+  if (!res.ok) return providers;
+  const coords: ({ lat: number; lng: number } | null)[] = await res.json();
+  return providers.map((p, i) =>
+    coords[i] ? { ...p, coords: [coords[i]!.lat, coords[i]!.lng] } : p
+  );
 }
 
 // ─── Leaflet map HTML ─────────────────────────────────────────────────────────
@@ -265,7 +248,6 @@ export default function PTLocatorScreen() {
   const [searched, setSearched] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [mapCenter, setMapCenter] = useState<[number, number]>([40.7128, -74.006]);
-  const geocodeAbort = useRef(false);
 
   async function handleSearch() {
     const zip = zipCode.trim();
@@ -274,7 +256,6 @@ export default function PTLocatorScreen() {
       return;
     }
     Keyboard.dismiss();
-    geocodeAbort.current = true; // cancel any in-progress geocode
     setLoading(true);
     setError('');
     setResults([]);
@@ -291,23 +272,12 @@ export default function PTLocatorScreen() {
       setResults(providers);
       setLoading(false);
 
-      // Geocode zip center first (single fast request) for map default center
-      const zipGeo = await geocodeAddress({ address: '', city: '', state: '', zip, npi: '', name: '', credential: '', specialty: '', phone: '' });
-      if (zipGeo) setMapCenter(zipGeo);
-
-      // Geocode all providers in the background
+      // Batch geocode all providers in one backend call
       setGeocoding(true);
-      geocodeAbort.current = false;
-      const geocoded: ProviderCard[] = [...providers];
-      for (let i = 0; i < providers.length; i++) {
-        if (geocodeAbort.current) break;
-        const coords = await geocodeAddress(providers[i]);
-        if (coords) {
-          geocoded[i] = { ...providers[i], coords };
-          setResults([...geocoded]);
-        }
-        if (i < providers.length - 1) await sleep(1100);
-      }
+      const geocoded = await batchGeocode(providers);
+      setResults(geocoded);
+      const first = geocoded.find((p) => p.coords);
+      if (first?.coords) setMapCenter(first.coords);
       setGeocoding(false);
     } catch {
       setError('Failed to fetch results. Check your connection and try again.');
