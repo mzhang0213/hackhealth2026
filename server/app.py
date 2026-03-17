@@ -1,11 +1,14 @@
 import os
+import re
 import pickle
 import random
 import ssl
 import certifi
+import tempfile
 import urllib.parse
 import urllib.request
 import json as _json
+from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 import threading
@@ -20,7 +23,7 @@ from supabase import create_client, Client
 import cv2 as cv
 import numpy as np
 import google.generativeai as genai
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -451,6 +454,111 @@ def analyze_range(payload: AnalyzeRangeRequest, authorization: str = Header(defa
     }
 
 
+@app.post("/analyze-video")
+async def analyze_video(
+    video: UploadFile = File(...),
+    muscle: str = Form(default="Unknown"),
+    previous_rom: Optional[float] = Form(default=None),
+    authorization: str = Header(default=""),
+):
+    """
+    Accept a video file from the mobile client, run YOLO pose detection
+    on every frame, compute ROM, classify with ML, and return a Gemini report.
+    """
+    suffix = Path(video.filename).suffix if video.filename else ".mp4"
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(await video.read())
+            tmp_path = tmp.name
+
+        joint_data = _fresh_joint_data()
+        cap = cv.VideoCapture(tmp_path)
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            results = pose_model(frame, conf=0.5, verbose=False, half=True)
+            try:
+                if results[0].keypoints is not None and len(results[0].keypoints.xy) > 0:
+                    kps = results[0].keypoints.xy[0].cpu().numpy()
+                    if len(kps) > 16:
+                        for joint_name, (i1, i2, i3) in JOINTS_MAP.items():
+                            pt1, pt2, pt3 = kps[i1], kps[i2], kps[i3]
+                            if pt1[0] != 0 and pt2[0] != 0 and pt3[0] != 0:
+                                angle = int(_calculate_angle(pt1, pt2, pt3))
+                                jd = joint_data[joint_name]
+                                jd["max_angle"] = max(jd["max_angle"], angle)
+                                jd["history"].append(angle)
+            except Exception:
+                pass
+        cap.release()
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+    joint_key = _joint_for_muscle(muscle)
+    jd = joint_data[joint_key]
+    history = jd["history"]
+    final_angle = jd["max_angle"] if jd["max_angle"] > 0 else 90
+    prev_rom = previous_rom if previous_rom is not None else float(final_angle)
+    peak_delta = final_angle - prev_rom
+    average_angle = int(sum(history) / len(history)) if history else final_angle
+
+    prediction = clinical_model.predict([[prev_rom, final_angle]])[0]
+    ml_status = {2: "HEALTHY", 1: "IMPROVING"}.get(int(prediction), "RESTRICTED")
+    emoji = {2: "🟢", 1: "🟡"}.get(int(prediction), "🔴")
+
+    try:
+        prompt = (
+            f"As a physical therapy AI, analyze this {muscle} data: "
+            f"Previous Peak: {prev_rom} degrees, Current Peak: {final_angle} degrees, "
+            f"Average ROM during session: {average_angle} degrees. "
+            f"Status: {ml_status}. Provide a 2-sentence recovery protocol."
+        )
+        ai_msg = llm.generate_content(prompt).text
+    except Exception as e:
+        print(f"GEMINI ERROR: {e}")
+        ai_msg = f"{emoji} AI CLINICAL ASSISTANT: {ml_status}\nSuggested Protocol: Review data manually."
+
+    # Save to mobility_scans if authenticated
+    auth_user_id = None
+    if authorization.startswith("Bearer "):
+        try:
+            token = authorization.removeprefix("Bearer ").strip()
+            auth_user_id = str(supabase.auth.get_user(token).user.id)
+        except Exception:
+            pass
+    if auth_user_id:
+        try:
+            supabase.table("mobility_scans").insert({
+                "supabase_user_id": auth_user_id,
+                "muscle": muscle,
+                "joint_key": joint_key,
+                "max_rom": float(final_angle),
+                "average_rom": float(average_angle),
+                "previous_rom": float(prev_rom),
+                "peak_delta": float(peak_delta),
+                "ml_classification": int(prediction),
+                "ml_status": ml_status,
+                "ai_message": ai_msg,
+            }).execute()
+        except Exception:
+            pass
+
+    return {
+        "status": "success",
+        "muscle": muscle,
+        "joint_key": joint_key,
+        "angle": final_angle,
+        "average_angle": average_angle,
+        "peak_delta": peak_delta,
+        "ml_status": ml_status,
+        "message": ai_msg,
+        "data_points": len(history),
+    }
+
+
 # ── Routes: exercises (Supabase) ──────────────────────────────────────────────
 
 @app.get("/users/{user_id}/exercises/today")
@@ -696,6 +804,69 @@ def geocode(address: str):
 
 class GeocodeBatchRequest(BaseModel):
     addresses: list[str]
+
+
+@app.post("/transcribe-injury")
+async def transcribe_injury(audio: UploadFile = File(...)):
+    """
+    Accept a voice recording, use Gemini to transcribe and extract injury
+    form fields. Returns JSON matching the injury log form fields.
+    """
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="No audio data received")
+
+    content_type = audio.content_type or "audio/m4a"
+    suffix = ".m4a"
+    if "wav" in content_type:
+        suffix = ".wav"
+    elif "webm" in content_type:
+        suffix = ".webm"
+    elif "ogg" in content_type:
+        suffix = ".ogg"
+
+    tmp_path = None
+    uploaded_file = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(audio_bytes)
+            tmp_path = tmp.name
+
+        uploaded_file = genai.upload_file(tmp_path, mime_type=content_type)
+
+        prompt = (
+            "Listen to this audio recording of someone describing their injury. "
+            "Extract the information and return ONLY a valid JSON object with these exact keys:\n"
+            '{"how_it_happened": "description of how the injury occurred", '
+            '"date_of_injury": "date in MM/DD/YYYY format, or empty string if not mentioned", '
+            '"doctor_diagnosis": "any medical diagnosis mentioned, or empty string", '
+            '"initial_symptoms": "symptoms like swelling, pain, limited motion, or empty string", '
+            '"status": "one of: pain, moderate, or recovering"}\n'
+            "Use 'pain' for active pain, 'moderate' for moderate discomfort, 'recovering' for improving. "
+            "Return ONLY the JSON object. No markdown, no explanation, no code fences."
+        )
+
+        response = llm.generate_content([uploaded_file, prompt])
+        raw = response.text.strip()
+        # Strip markdown code fences if Gemini wraps the JSON
+        raw = re.sub(r'^```[a-z]*\n?', '', raw)
+        raw = re.sub(r'\n?```$', '', raw).strip()
+
+        form_data = _json.loads(raw)
+        return form_data
+
+    except _json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Failed to parse AI response as JSON")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        if uploaded_file:
+            try:
+                genai.delete_file(uploaded_file.name)
+            except Exception:
+                pass
 
 
 @app.post("/geocode/batch")

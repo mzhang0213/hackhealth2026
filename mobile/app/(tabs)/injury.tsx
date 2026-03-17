@@ -7,6 +7,7 @@ import BottomSheet, {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
   Platform,
   ScrollView,
   StyleSheet,
@@ -14,12 +15,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Audio } from 'expo-av';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { HUD } from '@/constants/hud-theme';
 import { type InjuryStatus, type MarkedPart } from '@/constants/body-store';
-import { api } from '@/constants/api';
+import { api, type InjuryFormData } from '@/constants/api';
 import { useUser } from '@/context/UserContext';
 import Body, { ExtendedBodyPart, Slug } from 'react-native-body-highlighter';
 
@@ -59,8 +61,15 @@ export default function InjuryScreen() {
   const [doctorDiagnosis, setDoctorDiagnosis] = useState('');
   const [initialSymptoms, setInitialSymptoms] = useState('');
 
+  type MicState = 'idle' | 'recording' | 'processing';
+  const [micState, setMicState] = useState<MicState>('idle');
+  const [micError, setMicError] = useState('');
+  const [recentlyFilled, setRecentlyFilled] = useState(false);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const activeRecording = useRef<Audio.Recording | null>(null);
+
   const sheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ['55%', '92%'], []);
+  const snapPoints = useMemo(() => ['55%', '78%'], []);
   const hasLoaded = useRef(false);
 
   // Load markers from API on mount
@@ -101,6 +110,68 @@ export default function InjuryScreen() {
     }));
     api.saveInjuryMarkers(user.id, markers).catch(() => {});
   }, [markedParts, user]);
+
+  // Pulse animation while mic is recording
+  useEffect(() => {
+    if (micState !== 'recording') {
+      pulseAnim.setValue(1);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 0.3, duration: 500, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1,   duration: 500, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [micState]);
+
+  async function handleMicPress() {
+    setMicError('');
+
+    if (micState === 'recording') {
+      // Stop and process
+      const rec = activeRecording.current;
+      if (!rec) { setMicState('idle'); return; }
+      await rec.stopAndUnloadAsync();
+      const uri = rec.getURI();
+      activeRecording.current = null;
+      if (!uri) { setMicState('idle'); return; }
+
+      setMicState('processing');
+      try {
+        const data: InjuryFormData = await api.transcribeInjury(uri);
+        // Stagger-fill each field for a visual autofill effect
+        setTimeout(() => setHowItHappened(data.how_it_happened || ''),   0);
+        setTimeout(() => setDateOfInjury(data.date_of_injury || ''),     160);
+        setTimeout(() => setDoctorDiagnosis(data.doctor_diagnosis || ''), 320);
+        setTimeout(() => setInitialSymptoms(data.initial_symptoms || ''), 480);
+        const s = (data.status || 'pain') as InjuryStatus;
+        if (STATUS_COLORS[s]) setTimeout(() => setSelectedStatus(s), 80);
+        setRecentlyFilled(true);
+        setTimeout(() => setRecentlyFilled(false), 4000);
+      } catch {
+        setMicError('VOICE RECOGNITION FAILED — TRY AGAIN');
+      } finally {
+        setMicState('idle');
+      }
+      return;
+    }
+
+    // Start recording
+    const perm = await Audio.requestPermissionsAsync();
+    if (!perm.granted) {
+      setMicError('MICROPHONE ACCESS DENIED');
+      return;
+    }
+    await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+    const { recording } = await Audio.Recording.createAsync(
+      Audio.RecordingOptionsPresets.HIGH_QUALITY
+    );
+    activeRecording.current = recording;
+    setMicState('recording');
+  }
 
   function resetForm() {
     setSelectedStatus('pain');
@@ -375,6 +446,43 @@ export default function InjuryScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
+
+              {/* ── Voice autofill ── */}
+              <Animated.View style={[styles.voiceBtnWrap, { opacity: micState === 'recording' ? pulseAnim : 1 }]}>
+                <TouchableOpacity
+                  style={[
+                    styles.voiceBtn,
+                    micState === 'recording'  && styles.voiceBtnRecording,
+                    micState === 'processing' && styles.voiceBtnProcessing,
+                  ]}
+                  onPress={handleMicPress}
+                  disabled={micState === 'processing'}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name={micState === 'recording' ? 'stop-circle-outline' : 'mic-outline'}
+                    size={13}
+                    color={
+                      micState === 'recording'  ? HUD.danger  :
+                      micState === 'processing' ? HUD.warning :
+                      HUD.cyan
+                    }
+                  />
+                  <Text style={[
+                    styles.voiceBtnText,
+                    micState === 'recording'  && { color: HUD.danger },
+                    micState === 'processing' && { color: HUD.warning },
+                  ]}>
+                    {micState === 'idle'       ? 'VOICE AUTOFILL'  :
+                     micState === 'recording'  ? '● STOP RECORDING' :
+                     '⟳  ANALYZING...'}
+                  </Text>
+                </TouchableOpacity>
+              </Animated.View>
+              {recentlyFilled && (
+                <Text style={styles.autofillNote}>// FIELDS AUTOFILLED — REVIEW BEFORE SAVING</Text>
+              )}
+              {micError ? <Text style={styles.micErrorText}>{micError}</Text> : null}
 
               <View style={styles.divider} />
               <Text style={styles.optionalNote}>// ALL FIELDS BELOW ARE OPTIONAL</Text>
@@ -915,5 +1023,48 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 2,
+  },
+
+  voiceBtnWrap: { marginBottom: 16 },
+  voiceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    borderWidth: 1,
+    borderColor: `${HUD.cyan}50`,
+    borderRadius: 4,
+    paddingVertical: 10,
+    backgroundColor: `${HUD.cyan}08`,
+  },
+  voiceBtnRecording: {
+    borderColor: `${HUD.danger}70`,
+    backgroundColor: `${HUD.danger}10`,
+  },
+  voiceBtnProcessing: {
+    borderColor: `${HUD.warning}50`,
+    backgroundColor: `${HUD.warning}08`,
+  },
+  voiceBtnText: {
+    fontFamily: HUD.mono,
+    fontSize: 9,
+    color: HUD.cyan,
+    letterSpacing: 1.5,
+    fontWeight: '700',
+  },
+  autofillNote: {
+    fontFamily: HUD.mono,
+    fontSize: 8,
+    color: HUD.success,
+    letterSpacing: 1,
+    marginBottom: 10,
+    opacity: 0.9,
+  },
+  micErrorText: {
+    fontFamily: HUD.mono,
+    fontSize: 8,
+    color: HUD.danger,
+    letterSpacing: 1,
+    marginBottom: 8,
   },
 });

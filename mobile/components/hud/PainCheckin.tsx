@@ -87,7 +87,7 @@ function SuccessView({ onModify }: { onModify: () => void }) {
   );
 }
 
-export default function PainCheckin() {
+export default function PainCheckin({ onComplete }: { onComplete?: () => void } = {}) {
   const { user } = useUser();
   const [painLevel, setPainLevel] = useState<number | null>(null);
   const [symptoms,  setSymptoms]  = useState<Set<Symptom>>(new Set());
@@ -113,6 +113,7 @@ export default function PainCheckin() {
     } finally {
       setSubmitting(false);
       setSubmitted(true);
+      onComplete?.();
     }
   }
 

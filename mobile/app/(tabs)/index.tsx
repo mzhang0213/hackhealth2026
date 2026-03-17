@@ -585,10 +585,10 @@ export default function DashboardScreen() {
         {/* Header */}
         <DashHeader />
 
-        {/* Operator status separator */}
-        <View style={{ marginBottom: 8 }}>
-          <HudSeparator label="OPERATOR STATUS" />
-        </View>
+        {/*/!* Operator status separator *!/*/}
+        {/*<View style={{ marginBottom: 8 }}>*/}
+        {/*  <HudSeparator label="OPERATOR STATUS" />*/}
+        {/*</View>*/}
 
         {/* Welcome */}
         <View style={{ marginBottom: 24 }}>
@@ -646,10 +646,10 @@ export default function DashboardScreen() {
         {/*  <BodyMapContent bodyParts={bodyParts} />*/}
         {/*</HudPanel>*/}
 
-        {/* Quick access separator */}
-        <View style={{ marginBottom: 16 }}>
-          <HudSeparator label="QUICK ACCESS" />
-        </View>
+        {/*/!* Quick access separator *!/*/}
+        {/*<View style={{ marginBottom: 16 }}>*/}
+        {/*  <HudSeparator label="QUICK ACCESS" />*/}
+        {/*</View>*/}
 
         {/*/!* Quick actions *!/*/}
         {/*<View style={{ marginBottom: 24 }}>*/}
@@ -678,13 +678,13 @@ export default function DashboardScreen() {
           <AiBanner />
         </View>
 
-        {/* Footer */}
-        <View style={styles.footer}>
-          <HudSeparator label="R.E.B.O.U.N.D // RECOVERY ENHANCEMENT BODY OPTIMIZATION UNIFIED NETWORK DIAGNOSTICS" />
-          <Text style={styles.disclaimer}>
-            THIS SYSTEM DOES NOT REPLACE PROFESSIONAL MEDICAL ADVICE
-          </Text>
-        </View>
+        {/*/!* Footer *!/*/}
+        {/*<View style={styles.footer}>*/}
+        {/*  <HudSeparator label="R.E.B.O.U.N.D // RECOVERY ENHANCEMENT BODY OPTIMIZATION UNIFIED NETWORK DIAGNOSTICS" />*/}
+        {/*  <Text style={styles.disclaimer}>*/}
+        {/*    THIS SYSTEM DOES NOT REPLACE PROFESSIONAL MEDICAL ADVICE*/}
+        {/*  </Text>*/}
+        {/*</View>*/}
       </ScrollView>
     </SafeAreaView>
   );

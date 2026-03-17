@@ -24,7 +24,7 @@ function TabIcon({
             top: -8,
             left: 0,
             right: 0,
-            height: 1.5,
+            height: 1,
             backgroundColor: HUD.cyan,
             opacity: 0.9,
             ...(Platform.OS === 'ios'
