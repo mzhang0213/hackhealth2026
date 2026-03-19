@@ -23,7 +23,7 @@ from supabase import create_client, Client
 import cv2 as cv
 import numpy as np
 import google.generativeai as genai
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -42,6 +42,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+api_router = APIRouter(prefix="/api")
+
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 SERVER_DIR = os.path.dirname(__file__)
@@ -53,7 +55,7 @@ with open(os.path.join(CV_DIR, "clinical_ai_model.pkl"), "rb") as f:
     clinical_model = pickle.load(f)
 
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY", ""))
-llm = genai.GenerativeModel("gemini-2.5-flash")
+llm = genai.GenerativeModel("gemini-1.5-flash") # 1.5-flash is faster
 
 # ── Supabase ──────────────────────────────────────────────────────────────────
 
@@ -62,34 +64,40 @@ supabase: Client = create_client(
     os.environ["SUPABASE_KEY"],
 )
 
-def verify_token(authorization: str = Header(default="")) -> str:
-    """Verify a Supabase JWT via the Supabase Auth API and return the user's UUID."""
+def verify_token(authorization: str = Header(default="")):
+    """
+    Verify a Supabase JWT and return the user's UUID.
+    We use the global `supabase` client (with service_role key) for DB ops
+    to bypass RLS, while manually enforcing data ownership.
+    """
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
     token = authorization.removeprefix("Bearer ").strip()
     try:
-        response = supabase.auth.get_user(token)
-        return str(response.user.id)
+        user_response = supabase.auth.get_user(token)
+        return str(user_response.user.id)
     except Exception as exc:
         raise HTTPException(status_code=401, detail=f"Invalid token: {exc}")
 
-pose_model = YOLO(os.path.join(CV_DIR, "yolov8m-pose.pt"))
+# ── Initialize YOLO (Optimized Nano Model) ───────────────────────────────────
+
+pose_model = YOLO(os.path.join(CV_DIR, "yolov8n-pose.pt"))
 try:
     pose_model.to("mps")
-    print("Hardware Acceleration Enabled: Apple Silicon GPU (MPS)")
+    print("🚀 Hardware Acceleration Enabled: Using Apple Silicon GPU (MPS)")
 except Exception:
-    print("MPS not available, falling back to CPU.")
+    print("⚠️ MPS not available, falling back to CPU.")
 
-# ── Joint map (from pt_tracker.py) ───────────────────────────────────────────
+# ── Joint map (YOLO Keypoint Indices) ────────────────────────────────────────
 
 JOINTS_MAP: dict[str, tuple[int, int, int]] = {
-    "L_elbow":    (5, 7, 9),
+    "L_elbow":    (5, 7, 9),    # Shoulder, Elbow, Wrist
     "R_elbow":    (6, 8, 10),
-    "L_shoulder": (11, 5, 7),
+    "L_shoulder": (11, 5, 7),   # Hip, Shoulder, Elbow
     "R_shoulder": (12, 6, 8),
-    "L_hip":      (5, 11, 13),
+    "L_hip":      (5, 11, 13),  # Shoulder, Hip, Knee
     "R_hip":      (6, 12, 14),
-    "L_knee":     (11, 13, 15),
+    "L_knee":     (11, 13, 15), # Hip, Knee, Ankle
     "R_knee":     (12, 14, 16),
 }
 
@@ -152,7 +160,7 @@ def _generate_frames():
             time.sleep(0.01)
             continue
 
-        results = pose_model(frame, conf=0.5, verbose=False, half=True)
+        results = pose_model(frame, conf=0.45, verbose=False, half=True)
         annotated = results[0].plot(labels=False, conf=False, boxes=False)
 
         try:
@@ -279,12 +287,12 @@ class InjuryMarkerCreate(BaseModel):
 
 # ── Routes: general ───────────────────────────────────────────────────────────
 
-@app.get("/")
+@api_router.get("/")
 def root():
     return {"status": "ok", "service": "rebound-api"}
 
 
-@app.get("/health")
+@api_router.get("/health")
 def health():
     checks: dict[str, str] = {}
 
@@ -315,57 +323,66 @@ def health():
 
 # ── Routes: users ─────────────────────────────────────────────────────────────
 
-@app.post("/users", response_model=UserProfile, status_code=201)
+@api_router.post("/users", response_model=UserProfile, status_code=201)
 def create_user(payload: UserCreate, _uid: str = Depends(verify_token)):
+    """Create or update a user profile. Bypasses RLS via service_role key."""
     row = {
-        #postgrest.exceptions.APIError: {'message': 'null value in column "user_id" of relation "users" violates not-null constraint', 'code': '23502', 'hint': None, 'details': 'Failing row contains (null, Phillips Le, null, null, null, null, 956a5ce6-a95c-4ce9-b040-3856cbbd46cc, Football, ACL, 2026-01-01, ACL, Dr. Lee, 2026-03-15 15:57:24.560509+00).'}
-
-        "user_id": int(random.random()*99999),
+        "user_id": int(random.random()*10**9),
+        "supabase_id": _uid,
         "name": payload.name,
-        "supabase_id": payload.supabase_id,
         "sport": payload.sport,
         "injury_description": payload.injury_description,
         "injury_date": payload.injury_date,
         "doctor_diagnosis": payload.doctor_diagnosis or "",
         "pt_name": payload.pt_name or "",
     }
-    res = supabase.table("users").upsert(row, on_conflict="supabase_id").execute()
-    return build_profile(res.data[0])
+    try:
+        res = supabase.table("users").upsert(row, on_conflict="supabase_id").execute()
+        if not res.data:
+            raise HTTPException(status_code=500, detail="Failed to save user profile")
+        return build_profile(res.data[0])
+    except Exception as exc:
+        print(f"SUPABASE ERROR (create_user): {exc}")
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
-@app.get("/users/{user_id}", response_model=UserProfile)
+@api_router.get("/users/{user_id}", response_model=UserProfile)
 def get_user(user_id: str, _uid: str = Depends(verify_token)):
-    res = (
-        supabase.table("users")
-        .select("*")
-        .eq("supabase_id", user_id)
-        .limit(1)
-        .execute()
-    )
-    if not res.data:
-        raise HTTPException(status_code=404, detail="User not found")
-    return build_profile(res.data[0])
+    """Fetch user profile. Manually enforces ownership."""
+    if user_id != _uid:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    
+    try:
+        res = supabase.table("users").select("*").eq("supabase_id", _uid).limit(1).execute()
+        if not res.data:
+            raise HTTPException(status_code=404, detail="User profile not found")
+        return build_profile(res.data[0])
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.patch("/users/{user_id}", response_model=UserProfile)
+@api_router.patch("/users/{user_id}", response_model=UserProfile)
 def update_user(user_id: str, payload: UserUpdate, _uid: str = Depends(verify_token)):
+    """Update user profile. Manually enforces ownership."""
+    if user_id != _uid:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
     updates = {k: v for k, v in payload.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
-    res = (
-        supabase.table("users")
-        .update(updates)
-        .eq("supabase_id", user_id)
-        .execute()
-    )
-    if not res.data:
-        raise HTTPException(status_code=404, detail="User not found")
-    return build_profile(res.data[0])
+    
+    try:
+        res = supabase.table("users").update(updates).eq("supabase_id", _uid).execute()
+        if not res.data:
+            raise HTTPException(status_code=404, detail="User profile not found")
+        return build_profile(res.data[0])
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 # ── Routes: computer vision / ROM ─────────────────────────────────────────────
 
-@app.get("/video_feed")
+@api_router.get("/video_feed")
 def video_feed():
     """MJPEG stream with live pose overlay and ROM readout."""
     return StreamingResponse(
@@ -374,7 +391,7 @@ def video_feed():
     )
 
 
-@app.post("/start-scan")
+@api_router.post("/start-scan")
 def start_scan():
     """Reset and begin a new ROM recording session."""
     scanner_state["is_scanning"] = True
@@ -382,71 +399,145 @@ def start_scan():
     return {"status": "recording_started"}
 
 
-@app.post("/analyze-range")
-def analyze_range(payload: AnalyzeRangeRequest, authorization: str = Header(default="")):
-    """
-    Stop the scan, run ML classification, generate Gemini AI report,
-    and save the session JSON to Computer_vision/.
-    """
+@api_router.post("/analyze-range")
+def analyze_range(payload: AnalyzeRangeRequest, _uid: str = Depends(verify_token)):
+    """Stop scan, run ML classification, and save to Supabase bypassing RLS."""
     scanner_state["is_scanning"] = False
 
     joint_key = _joint_for_muscle(payload.muscle)
     jd = scanner_state["joint_data"][joint_key]
     history = jd["history"]
+    
+    # Defaults in case of short data
     final_angle = jd["max_angle"] if jd["max_angle"] > 0 else 90
-    previous_rom = payload.previous_rom if payload.previous_rom is not None else float(final_angle)
-    peak_delta = final_angle - previous_rom
-    average_angle = int(sum(history) / len(history)) if history else final_angle
+    if payload.previous_rom is not None:
+        previous_rom = float(payload.previous_rom)
+    else:
+        previous_rom = float(final_angle)
 
-    prediction = clinical_model.predict([[previous_rom, final_angle]])[0]
-    ml_status = {2: "HEALTHY", 1: "IMPROVING"}.get(int(prediction), "RESTRICTED")
-    emoji    = {2: "🟢",       1: "🟡"      }.get(int(prediction), "🔴")
+    # 🧠 1. EXTRACT THE 6 KINEMATIC FEATURES
+    if len(history) >= 3:
+        arr = np.array(history)
+        peak_rom = float(np.max(arr))
+        min_rom = float(np.min(arr))
+        avg_rom = float(np.mean(arr))
+        
+        velocities = np.abs(np.diff(arr))
+        avg_vel = float(np.mean(velocities))
+        jitter = float(np.std(velocities))
+        
+        # 🔥 THE NEW 6TH FEATURE
+        accelerations = np.abs(np.diff(velocities))
+        avg_accel = float(np.mean(accelerations)) if len(accelerations) > 0 else 0.0
+    else:
+        # Failsafe for empty or ultra-short scans
+        peak_rom = float(final_angle)
+        min_rom, avg_rom = peak_rom, peak_rom
+        avg_vel, jitter, avg_accel = 0.0, 0.0, 0.0
+
+    peak_delta = float(peak_rom) - previous_rom
+
+    # 🧠 2. RUN XGBOOST PREDICTION (Calibrated to 60% Threshold)
+    try:
+        features = [[peak_rom, min_rom, avg_rom, avg_vel, jitter, avg_accel]]
+        
+        # Get % confidence that patient is Healthy (Class 1)
+        healthy_probability = clinical_model.predict_proba(features)[0][1]
+        
+        # J.A.R.V.I.S. Clinical Rule: Lowered to 20%
+        CLINICAL_THRESHOLD = 0.20
+        total_range = peak_rom - min_rom
+        ml_status = "HEALTHY" if healthy_probability >= CLINICAL_THRESHOLD else "RESTRICTED"
+        
+        # 🟢 NEW: FUNCTIONAL ARC & VELOCITY BYPASS
+        # 1. Arc Check (at least 60 deg)
+        # 2. Velocity Floor (at least 0.8 deg/frame for confidence)
+        is_improving = peak_delta > 8
+        is_guarded = avg_vel < 0.8
+        
+        if (total_range < 60 or is_guarded) and ml_status == "HEALTHY" and not is_improving:
+            ml_status = "RESTRICTED"
+            reason = "Arc < 60°" if total_range < 60 else f"Velocity < 0.8 ({avg_vel:.2f})"
+            print(f"⚠️ Functional Quality Check Failed ({reason}). Downgrading.")
+
+        # 🟡 IMPROVING REFINEMENT
+        if ml_status == "RESTRICTED":
+            significant_growth = (peak_rom > 100 or peak_delta > 5)
+            movement_quality = (jitter < 1.0 and avg_vel > 0.8)
+            
+            if significant_growth or movement_quality:
+                ml_status = "IMPROVING"
+        
+        emoji = "🟢" if ml_status == "HEALTHY" else ("🟡" if ml_status == "IMPROVING" else "🔴")
+        print(f"🧠 ML Confidence: {healthy_probability*100:.1f}% -> Status: {ml_status}")
+    except Exception as e:
+        print(f"XGBOOST ERROR: {e}")
+        prediction = 0
+        ml_status = "UNKNOWN"
+        emoji = "⚪"
 
     try:
+        # Qualitative analysis of flexion vs extension
+        struggle_type = "consistent"
+        if peak_rom < 160: struggle_type = "extension struggle (cannot straighten)"
+        elif min_rom > 60: struggle_type = "flexion struggle (cannot bend/move up)"
+        
         prompt = (
-            f"As a physical therapy AI, analyze this {payload.muscle} data: "
-            f"Previous Peak: {previous_rom} degrees, Current Peak: {final_angle} degrees, "
-            f"Average ROM during session: {average_angle} degrees. "
-            f"Status: {ml_status}. Provide a 2-sentence recovery protocol."
+            f"You are a Senior Clinical Physical Therapist analyzing a {payload.muscle} scan:\n"
+            f"--- KINEMATIC DATA ---\n"
+            f"- Arc: {min_rom:.1f}° to {peak_rom:.1f}° (Range: {total_range:.1f}°)\n"
+            f"- Velocity: {avg_vel:.2f} (Speed) | Jitter: {jitter:.2f} (Guarding)\n"
+            f"- Struggle Detect: {struggle_type}\n"
+            f"- ML Status: {ml_status}\n\n"
+            f"Clinical Verdict:\n"
+            f"1. Explain why they were labeled {ml_status} (specifically address the {avg_vel:.2f} velocity if it is low).\n"
+            f"2. Suggest 2 'speed and control' exercises if velocity is low, or 'range' exercises if ROM is low."
         )
         ai_msg = llm.generate_content(prompt).text
     except Exception as e:
         print(f"GEMINI ERROR: {e}")
-        ai_msg = f"{emoji} AI CLINICAL ASSISTANT: {ml_status}\nSuggested Protocol: Review data manually."
+        ai_msg = f"{emoji} CLINICAL VERDICT: {ml_status}\nVelocity: {avg_vel:.2f} | Jitter: {jitter:.2f}. Suggested: Wall slides and light stretching."
 
-    # Save to Supabase mobility_scans if authenticated
-    auth_user_id = None
-    if authorization.startswith("Bearer "):
+    # Save to Supabase mobility_scans (Robust insertion with fallback)
+    try:
+        data = {
+            "supabase_user_id": _uid,
+            "muscle": payload.muscle,
+            "joint_key": joint_key,
+            "max_rom": int(round(peak_rom)),
+            "min_rom": round(min_rom, 2),
+            "average_rom": int(round(avg_rom)),
+            "previous_rom": int(round(previous_rom)),
+            "peak_delta": int(round(peak_delta)),
+            "velocity": round(avg_vel, 2),
+            "jitter": round(jitter, 2),
+            "acceleration": round(avg_accel, 2),
+            "ml_classification": int(prediction),
+            "ml_status": ml_status,
+            "ai_message": ai_msg,
+        }
         try:
-            token = authorization.removeprefix("Bearer ").strip()
-            auth_user_id = str(supabase.auth.get_user(token).user.id)
-        except Exception:
-            pass
-
-    if auth_user_id:
-        try:
-            supabase.table("mobility_scans").insert({
-                "supabase_user_id": auth_user_id,
-                "muscle": payload.muscle,
-                "joint_key": joint_key,
-                "max_rom": float(final_angle),
-                "average_rom": float(average_angle),
-                "previous_rom": float(previous_rom),
-                "peak_delta": float(peak_delta),
-                "ml_classification": int(prediction),
-                "ml_status": ml_status,
-                "ai_message": ai_msg,
-            }).execute()
-        except Exception:
-            pass  # Don't fail the scan if DB write fails
+            supabase.table("mobility_scans").insert(data).execute()
+        except Exception as e:
+            if "column" in str(e).lower():
+                print("⚠️ New columns not found, retrying with basic columns...")
+                basic_data = {k: v for k, v in data.items() if k not in ["min_rom", "velocity", "jitter", "acceleration"]}
+                supabase.table("mobility_scans").insert(basic_data).execute()
+            else:
+                raise e
+    except Exception as exc:
+        print(f"SUPABASE ERROR (analyze-range): {exc}")
 
     return {
         "status": "success",
         "muscle": payload.muscle,
         "joint_key": joint_key,
-        "angle": final_angle,
-        "average_angle": average_angle,
-        "peak_delta": peak_delta,
+        "angle": round(peak_rom, 2),
+        "average_angle": round(avg_rom, 2),
+        "peak_delta": round(peak_delta, 2),
+        "velocity": round(avg_vel, 2),
+        "jitter": round(jitter, 2),
+        "acceleration": round(avg_accel, 2),
         "ml_status": ml_status,
         "message": ai_msg,
         "data_points": len(history),
@@ -454,17 +545,14 @@ def analyze_range(payload: AnalyzeRangeRequest, authorization: str = Header(defa
     }
 
 
-@app.post("/analyze-video")
+@api_router.post("/analyze-video")
 async def analyze_video(
     video: UploadFile = File(...),
     muscle: str = Form(default="Unknown"),
     previous_rom: Optional[float] = Form(default=None),
-    authorization: str = Header(default=""),
+    _uid: str = Depends(verify_token),
 ):
-    """
-    Accept a video file from the mobile client, run YOLO pose detection
-    on every frame, compute ROM, classify with ML, and return a Gemini report.
-    """
+    """Analyze video as the authenticated user bypassing RLS."""
     suffix = Path(video.filename).suffix if video.filename else ".mp4"
     tmp_path = None
     try:
@@ -474,85 +562,144 @@ async def analyze_video(
 
         joint_data = _fresh_joint_data()
         cap = cv.VideoCapture(tmp_path)
+        frame_idx = 0
         while True:
             ret, frame = cap.read()
-            if not ret:
-                break
-            results = pose_model(frame, conf=0.5, verbose=False, half=True)
+            if not ret: break
+            
+            # Process EVERY frame for maximum precision on rapid movements
+            # (conf=0.35 and half=True keep this efficient)
+            results = pose_model(frame, conf=0.35, verbose=False, half=True)
             try:
                 if results[0].keypoints is not None and len(results[0].keypoints.xy) > 0:
                     kps = results[0].keypoints.xy[0].cpu().numpy()
                     if len(kps) > 16:
-                        for joint_name, (i1, i2, i3) in JOINTS_MAP.items():
+                        for j_name, (i1, i2, i3) in JOINTS_MAP.items():
                             pt1, pt2, pt3 = kps[i1], kps[i2], kps[i3]
                             if pt1[0] != 0 and pt2[0] != 0 and pt3[0] != 0:
                                 angle = int(_calculate_angle(pt1, pt2, pt3))
-                                jd = joint_data[joint_name]
+                                jd = joint_data[j_name]
                                 jd["max_angle"] = max(jd["max_angle"], angle)
                                 jd["history"].append(angle)
-            except Exception:
-                pass
+            except Exception: pass
+            frame_idx += 1
         cap.release()
     finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
+        if tmp_path and os.path.exists(tmp_path): os.unlink(tmp_path)
 
     joint_key = _joint_for_muscle(muscle)
     jd = joint_data[joint_key]
     history = jd["history"]
+    
+    # Defaults in case of short data
     final_angle = jd["max_angle"] if jd["max_angle"] > 0 else 90
     prev_rom = previous_rom if previous_rom is not None else float(final_angle)
-    peak_delta = final_angle - prev_rom
-    average_angle = int(sum(history) / len(history)) if history else final_angle
 
-    prediction = clinical_model.predict([[prev_rom, final_angle]])[0]
-    ml_status = {2: "HEALTHY", 1: "IMPROVING"}.get(int(prediction), "RESTRICTED")
-    emoji = {2: "🟢", 1: "🟡"}.get(int(prediction), "🔴")
+    # 🧠 1. EXTRACT THE 6 KINEMATIC FEATURES
+    if len(history) >= 3:
+        arr = np.array(history)
+        peak_rom = float(np.max(arr))
+        min_rom = float(np.min(arr))
+        avg_rom = float(np.mean(arr))
+        
+        velocities = np.abs(np.diff(arr))
+        avg_vel = float(np.mean(velocities))
+        jitter = float(np.std(velocities))
+        
+        # 🔥 THE NEW 6TH FEATURE (Acceleration)
+        accelerations = np.abs(np.diff(velocities))
+        avg_accel = float(np.mean(accelerations)) if len(accelerations) > 0 else 0.0
+    else:
+        # Failsafe for short video scans
+        peak_rom = float(final_angle)
+        min_rom, avg_rom = peak_rom, peak_rom
+        avg_vel, jitter, avg_accel = 0.0, 0.0, 0.0
+
+    peak_delta = peak_rom - prev_rom
+
+    # 🧠 2. RUN XGBOOST PREDICTION 
+    try:
+        features = [[peak_rom, min_rom, avg_rom, avg_vel, jitter, avg_accel]]
+        
+        # J.A.R.V.I.S. Clinical Rule: Lowered to 20%
+        CLINICAL_THRESHOLD = 0.20
+        # Get % confidence that patient is Healthy (Class 1)
+        healthy_probability = clinical_model.predict_proba(features)[0][1]
+        
+        total_range = peak_rom - min_rom
+        ml_status = "HEALTHY" if healthy_probability >= CLINICAL_THRESHOLD else "RESTRICTED"
+        
+        is_guarded = avg_vel < 0.8
+        if (total_range < 60 or is_guarded) and ml_status == "HEALTHY" and peak_delta < 8:
+            ml_status = "RESTRICTED"
+            print(f"⚠️ Functional Quality Check Failed (Vel: {avg_vel:.2f}). Downgrading.")
+
+        # 🟡 IMPROVING REFINEMENT
+        if ml_status == "RESTRICTED":
+            significant_growth = (peak_rom > 100 or peak_delta > 5)
+            movement_quality = (jitter < 1.0 and avg_vel > 0.8)
+            if significant_growth or movement_quality:
+                ml_status = "IMPROVING"
+        
+        emoji = "🟢" if ml_status == "HEALTHY" else ("🟡" if ml_status == "IMPROVING" else "🔴")
+    except Exception:
+        prediction, ml_status, emoji = 0, "UNKNOWN", "⚪"
 
     try:
+        struggle_type = "consistent"
+        if peak_rom < 160: struggle_type = "extension struggle (cannot straighten)"
+        elif min_rom > 60: struggle_type = "flexion struggle (cannot bend/move up)"
+
         prompt = (
-            f"As a physical therapy AI, analyze this {muscle} data: "
-            f"Previous Peak: {prev_rom} degrees, Current Peak: {final_angle} degrees, "
-            f"Average ROM during session: {average_angle} degrees. "
-            f"Status: {ml_status}. Provide a 2-sentence recovery protocol."
+            f"You are a Senior Clinical Physical Therapist reviewing a {muscle} video:\n"
+            f"--- CLINICAL DATA ---\n"
+            f"- Actionable ROM: {min_rom:.1f}° to {peak_rom:.1f}° (Range: {total_range:.1f}°)\n"
+            f"- Quality Metrics: Velocity {avg_vel:.2f} | Jitter {jitter:.2f}\n"
+            f"- Identified Struggle: {struggle_type}\n"
+            f"--- TASK ---\n"
+            f"Provide analysis for {ml_status} result. Specifically address the velocity of {avg_vel:.2f} (if it's below 1.0, it's guarded movement). Recommend 2 exercises for speed and control."
         )
         ai_msg = llm.generate_content(prompt).text
-    except Exception as e:
-        print(f"GEMINI ERROR: {e}")
-        ai_msg = f"{emoji} AI CLINICAL ASSISTANT: {ml_status}\nSuggested Protocol: Review data manually."
+    except Exception:
+        ai_msg = f"Report: {ml_status}. ROM {peak_rom:.1f}°. Velocity {avg_vel:.2f}. Suggested: Isometrics and controlled ROM work."
 
-    # Save to mobility_scans if authenticated
-    auth_user_id = None
-    if authorization.startswith("Bearer "):
+    # Save to mobility_scans (Robust insertion with fallback)
+    try:
+        data = {
+            "supabase_user_id": _uid,
+            "muscle": muscle,
+            "joint_key": joint_key,
+            "max_rom": int(round(peak_rom)),
+            "min_rom": round(min_rom, 2),
+            "average_rom": int(round(avg_rom)),
+            "previous_rom": int(round(prev_rom)),
+            "peak_delta": int(round(peak_delta)),
+            "velocity": round(avg_vel, 2),
+            "jitter": round(jitter, 2),
+            "acceleration": round(avg_accel, 2),
+            "ml_classification": int(prediction),
+            "ml_status": ml_status,
+            "ai_message": ai_msg,
+        }
         try:
-            token = authorization.removeprefix("Bearer ").strip()
-            auth_user_id = str(supabase.auth.get_user(token).user.id)
-        except Exception:
-            pass
-    if auth_user_id:
-        try:
-            supabase.table("mobility_scans").insert({
-                "supabase_user_id": auth_user_id,
-                "muscle": muscle,
-                "joint_key": joint_key,
-                "max_rom": float(final_angle),
-                "average_rom": float(average_angle),
-                "previous_rom": float(prev_rom),
-                "peak_delta": float(peak_delta),
-                "ml_classification": int(prediction),
-                "ml_status": ml_status,
-                "ai_message": ai_msg,
-            }).execute()
-        except Exception:
-            pass
+            supabase.table("mobility_scans").insert(data).execute()
+        except Exception as e:
+            if "column" in str(e).lower():
+                print("⚠️ New columns not found, retrying with basic columns...")
+                basic_data = {k: v for k, v in data.items() if k not in ["min_rom", "velocity", "jitter", "acceleration"]}
+                supabase.table("mobility_scans").insert(basic_data).execute()
+            else:
+                raise e
+    except Exception as exc:
+        print(f"SUPABASE ERROR (analyze-video): {exc}")
 
     return {
         "status": "success",
         "muscle": muscle,
         "joint_key": joint_key,
-        "angle": final_angle,
-        "average_angle": average_angle,
-        "peak_delta": peak_delta,
+        "angle": round(peak_rom, 2),
+        "average_angle": round(avg_rom, 2),
+        "peak_delta": round(peak_delta, 2),
         "ml_status": ml_status,
         "message": ai_msg,
         "data_points": len(history),
@@ -561,202 +708,206 @@ async def analyze_video(
 
 # ── Routes: exercises (Supabase) ──────────────────────────────────────────────
 
-@app.get("/users/{user_id}/exercises/today")
+@api_router.get("/users/{user_id}/exercises/today")
 def get_today_exercises(user_id: str, _uid: str = Depends(verify_token)):
+    """Fetch today's exercises for the authenticated user."""
+    if user_id != _uid and user_id != "me":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
     today = date.today().isoformat()
-    res = (
-        supabase.table("exercises")
-        .select("*")
-        .eq("user_id", user_id)
-        .eq("scheduled_date", today)
-        .order("created_at")
-        .execute()
-    )
-    return res.data
+    try:
+        res = supabase.table("exercises").select("*").eq("user_id", _uid).eq("scheduled_date", today).order("created_at").execute()
+        return res.data
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.patch("/users/{user_id}/exercises/{exercise_id}/complete")
+@api_router.patch("/users/{user_id}/exercises/{exercise_id}/complete")
 def toggle_exercise(user_id: str, exercise_id: str, _uid: str = Depends(verify_token)):
-    res = (
-        supabase.table("exercises")
-        .select("completed")
-        .eq("id", exercise_id)
-        .eq("user_id", user_id)
-        .single()
-        .execute()
-    )
-    if not res.data:
-        raise HTTPException(status_code=404, detail="Exercise not found")
-    new_val = not res.data["completed"]
-    completed_at = datetime.utcnow().isoformat() if new_val else None
-    supabase.table("exercises").update(
-        {"completed": new_val, "completed_at": completed_at}
-    ).eq("id", exercise_id).execute()
-    return {"completed": new_val}
+    """Toggle completion status of an exercise. Verifies owner via Manual Query."""
+    try:
+        # First verify ownership
+        check = supabase.table("exercises").select("completed").eq("id", exercise_id).eq("user_id", _uid).single().execute()
+        if not check.data:
+            raise HTTPException(status_code=404, detail="Exercise not found or unauthorized")
+        
+        new_val = not check.data["completed"]
+        completed_at = datetime.utcnow().isoformat() if new_val else None
+        
+        supabase.table("exercises").update({"completed": new_val, "completed_at": completed_at}).eq("id", exercise_id).eq("user_id", _uid).execute()
+        return {"completed": new_val}
+    except Exception as exc:
+        if isinstance(exc, HTTPException): raise exc
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
-@app.get("/users/{user_id}/exercises/schedule")
+@api_router.get("/users/{user_id}/exercises/schedule")
 def get_exercise_schedule(user_id: str, _uid: str = Depends(verify_token)):
+    """Fetch the full exercise schedule for the authenticated user bypassing RLS."""
+    if user_id != _uid and user_id != "me":
+        raise HTTPException(status_code=403, detail="Forbidden")
+        
     from_date = date.today().isoformat()
-    res = (
-        supabase.table("exercises")
-        .select("*")
-        .eq("user_id", user_id)
-        .gte("scheduled_date", from_date)
-        .order("scheduled_date")
-        .execute()
-    )
-    grouped: dict = defaultdict(list)
-    for ex in res.data:
-        grouped[ex["scheduled_date"]].append(ex)
-    sections = []
-    for d_str, exs in sorted(grouped.items()):
-        d = date.fromisoformat(d_str)
-        sections.append({
-            "day_abbr": d.strftime("%a"),
-            "day_num": str(d.day),
-            "month": d.strftime("%b"),
-            "exercises": exs,
-        })
-    return sections
+    try:
+        res = supabase.table("exercises").select("*").eq("user_id", _uid).gte("scheduled_date", from_date).order("scheduled_date").execute()
+        grouped: dict = defaultdict(list)
+        for ex in res.data:
+            grouped[ex["scheduled_date"]].append(ex)
+        sections = []
+        for d_str, exs in sorted(grouped.items()):
+            d = date.fromisoformat(d_str)
+            sections.append({
+                "day_abbr": d.strftime("%a"),
+                "day_num": str(d.day),
+                "month": d.strftime("%b"),
+                "exercises": exs,
+            })
+        return sections
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ── Routes: checkins (Supabase) ───────────────────────────────────────────────
 
-@app.post("/users/{user_id}/checkins", status_code=201)
+@api_router.post("/users/{user_id}/checkins", status_code=201)
 def create_checkin(user_id: str, payload: CheckinCreate, _uid: str = Depends(verify_token)):
-    row = {
-        "user_id": user_id,
-        "pain_level": payload.pain_level,
-        "symptoms": payload.symptoms,
-    }
-    res = supabase.table("checkins").insert(row).execute()
-    return res.data[0]
+    """Create a new pain/symptom check-in for the authenticated user bypassing RLS."""
+    if user_id != _uid and user_id != "me":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    try:
+        res = supabase.table("checkins").insert({
+            "user_id": _uid,
+            "pain_level": payload.pain_level,
+            "symptoms": payload.symptoms,
+        }).execute()
+        return res.data[0]
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 # ── Routes: stats & metrics (Supabase) ────────────────────────────────────────
 
-@app.get("/users/{user_id}/stats")
+@api_router.get("/users/{user_id}/stats")
 def get_stats(user_id: str, _uid: str = Depends(verify_token)):
-    # Streak: count consecutive days (from today backwards) with ≥1 completed exercise
-    rows = (
-        supabase.table("exercises")
-        .select("scheduled_date,completed")
-        .eq("user_id", user_id)
-        .order("scheduled_date", desc=True)
-        .execute()
-    )
-    day_done: dict[str, bool] = {}
-    for ex in rows.data:
-        day_done.setdefault(ex["scheduled_date"], False)
-        if ex["completed"]:
-            day_done[ex["scheduled_date"]] = True
+    """Compute recovery stats (streak, mobility trend) for the authenticated user bypassing RLS."""
+    if user_id != _uid and user_id != "me":
+        raise HTTPException(status_code=403, detail="Forbidden")
 
-    streak = 0
-    check = date.today()
-    for d_str in sorted(day_done, reverse=True):
-        d = date.fromisoformat(d_str)
-        if d == check and day_done[d_str]:
-            streak += 1
-            check = d - timedelta(days=1)
-        elif d == check:
-            break
+    try:
+        # Streak calculation
+        rows = supabase.table("exercises").select("scheduled_date,completed").eq("user_id", _uid).order("scheduled_date", desc=True).execute()
+        day_done: dict[str, bool] = {}
+        for ex in rows.data:
+            day_done.setdefault(ex["scheduled_date"], False)
+            if ex["completed"]:
+                day_done[ex["scheduled_date"]] = True
 
-    # Latest two metric records for trend deltas
-    metrics = (
-        supabase.table("recovery_metrics")
-        .select("*")
-        .eq("user_id", user_id)
-        .order("recorded_at", desc=True)
-        .limit(2)
-        .execute()
-    )
-    mobility_index = 0
-    mobility_change = 0
-    pain_reduction = 0
-    pain_change = 0
-    if metrics.data:
-        latest = metrics.data[0]
-        mobility_index = int(latest.get("mobility_score", 0))
-        pain_reduction = int(100 - latest.get("pain_score", 0))
-        if len(metrics.data) > 1:
-            prev = metrics.data[1]
-            mobility_change = int(
-                latest.get("mobility_score", 0) - prev.get("mobility_score", 0)
-            )
-            pain_change = int(
-                prev.get("pain_score", 0) - latest.get("pain_score", 0)
-            )
+        streak = 0
+        check = date.today()
+        # Sort keys to ensure we start from most recent
+        for d_str in sorted(day_done, reverse=True):
+            d = date.fromisoformat(d_str)
+            if d == check and day_done[d_str]:
+                streak += 1
+                check = d - timedelta(days=1)
+            elif d == check:
+                break
 
-    return {
-        "streak_days": streak,
-        "streak_change": 1,
-        "mobility_index": mobility_index,
-        "mobility_change": mobility_change,
-        "pain_reduction": pain_reduction,
-        "pain_change": pain_change,
-    }
+        # Metrics for trend deltas
+        metrics = supabase.table("recovery_metrics").select("*").eq("user_id", _uid).order("recorded_at", desc=True).limit(2).execute()
+        mobility_index = 0
+        mobility_change = 0
+        pain_reduction = 0
+        pain_change = 0
+        if metrics.data:
+            latest = metrics.data[0]
+            mobility_index = int(latest.get("mobility_score", 0))
+            pain_reduction = int(100 - latest.get("pain_score", 0))
+            if len(metrics.data) > 1:
+                prev = metrics.data[1]
+                mobility_change = int(latest.get("mobility_score", 0) - prev.get("mobility_score", 0))
+                pain_change = int(prev.get("pain_score", 0) - latest.get("pain_score", 0))
 
-
-@app.get("/users/{user_id}/metrics/history")
-def get_metrics_history(user_id: str, _uid: str = Depends(verify_token)):
-    res = (
-        supabase.table("recovery_metrics")
-        .select("*")
-        .eq("user_id", user_id)
-        .order("recorded_at")
-        .execute()
-    )
-    return [
-        {
-            "week": r["week_label"],
-            "pain": r["pain_score"],
-            "mobility": r["mobility_score"],
-            "strength": r["strength_score"],
+        return {
+            "streak_days": streak,
+            "streak_change": 1 if streak > 0 else 0,
+            "mobility_index": mobility_index,
+            "mobility_change": mobility_change,
+            "pain_reduction": pain_reduction,
+            "pain_change": pain_change,
         }
-        for r in res.data
-    ]
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@api_router.get("/users/{user_id}/metrics/history")
+def get_metrics_history(user_id: str, _uid: str = Depends(verify_token)):
+    """Fetch history of recovery metrics for the authenticated user bypassing RLS."""
+    if user_id != _uid and user_id != "me":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    try:
+        res = supabase.table("recovery_metrics").select("*").eq("user_id", _uid).order("recorded_at").execute()
+        return [
+            {
+                "week": r.get("week_label", "Week"),
+                "pain": r.get("pain_score", 0),
+                "mobility": r.get("mobility_score", 0),
+                "strength": r.get("strength_score", 0),
+            }
+            for r in res.data
+        ]
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ── Routes: injury markers (Supabase injury_logs) ─────────────────────────────
 
-@app.get("/users/{user_id}/injury-markers")
+@api_router.get("/users/{user_id}/injury-markers")
 def get_injury_markers(user_id: str, _uid: str = Depends(verify_token)):
-    """Return all body-diagram markers for a user."""
-    res = (
-        supabase.table("injury_logs")
-        .select("*")
-        .eq("supabase_user_id", user_id)
-        .execute()
-    )
-    return res.data
+    """Return all body-diagram markers for the authenticated user bypassing RLS."""
+    if user_id != _uid and user_id != "me":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    try:
+        res = supabase.table("injury_logs").select("*").eq("supabase_user_id", _uid).execute()
+        return res.data
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.put("/users/{user_id}/injury-markers", status_code=200)
+@api_router.put("/users/{user_id}/injury-markers", status_code=200)
 def save_injury_markers(
     user_id: str,
     markers: list[InjuryMarkerCreate],
     _uid: str = Depends(verify_token),
 ):
-    """Replace all body-diagram markers for a user (full sync)."""
-    # Delete existing then insert the full current set
-    supabase.table("injury_logs").delete().eq("supabase_user_id", user_id).execute()
-    if markers:
-        rows = [
-            {
-                "supabase_user_id": user_id,
-                "slug": m.slug,
-                "side": m.side,
-                "status": m.status,
-                "how_it_happened": m.how_it_happened,
-                "date_of_injury": m.date_of_injury,
-                "doctor_diagnosis": m.doctor_diagnosis,
-                "initial_symptoms": m.initial_symptoms,
-            }
-            for m in markers
-        ]
-        supabase.table("injury_logs").insert(rows).execute()
-    return {"saved": len(markers)}
+    """Replace all body-diagram markers for the authenticated user bypassing RLS."""
+    if user_id != _uid and user_id != "me":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    try:
+        # Delete existing then insert the full current set
+        supabase.table("injury_logs").delete().eq("supabase_user_id", _uid).execute()
+        if markers:
+            rows = [
+                {
+                    "supabase_user_id": _uid,
+                    "slug": m.slug,
+                    "side": m.side,
+                    "status": m.status,
+                    "how_it_happened": m.how_it_happened,
+                    "date_of_injury": m.date_of_injury,
+                    "doctor_diagnosis": m.doctor_diagnosis,
+                    "initial_symptoms": m.initial_symptoms,
+                }
+                for m in markers
+            ]
+            supabase.table("injury_logs").insert(rows).execute()
+        return {"saved": len(markers)}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 # ── Routes: PT finder proxies ─────────────────────────────────────────────────
@@ -769,7 +920,7 @@ def _http_get(url: str, headers: dict | None = None) -> dict:
         return _json.loads(resp.read())
 
 
-@app.get("/pt-search")
+@api_router.get("/pt-search")
 def pt_search(zip: str, limit: int = 20):
     """Proxy the NPPES NPI registry for Physical Therapists near a zip code."""
     if not zip.isdigit() or len(zip) != 5:
@@ -784,7 +935,7 @@ def pt_search(zip: str, limit: int = 20):
     return data.get("results", [])
 
 
-@app.get("/geocode")
+@api_router.get("/geocode")
 def geocode(address: str):
     """Proxy Nominatim geocoding — keeps rate-limit compliance server-side."""
     params = urllib.parse.urlencode({
@@ -806,7 +957,7 @@ class GeocodeBatchRequest(BaseModel):
     addresses: list[str]
 
 
-@app.post("/transcribe-injury")
+@api_router.post("/transcribe-injury")
 async def transcribe_injury(audio: UploadFile = File(...)):
     """
     Accept a voice recording, use Gemini to transcribe and extract injury
@@ -869,7 +1020,7 @@ async def transcribe_injury(audio: UploadFile = File(...)):
                 pass
 
 
-@app.post("/geocode/batch")
+@api_router.post("/geocode/batch")
 def geocode_batch(payload: GeocodeBatchRequest):
     """
     Geocode multiple addresses in one request.
@@ -898,3 +1049,11 @@ def geocode_batch(payload: GeocodeBatchRequest):
         except Exception:
             out.append(None)
     return out
+
+
+app.include_router(api_router)
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

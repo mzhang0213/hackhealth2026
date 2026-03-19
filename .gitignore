@@ -102,3 +102,19 @@ server/.idea/
 
 
 cfconfig.txt
+
+# --- CRITICAL ML & DATA FILES ---
+*.pkl
+*.pt
+*.csv
+Simplified/
+Computer_vision/yolov8n-pose.pt
+Computer_vision/clinical_ai_model.pkl
+
+# --- FLATTENED PYTHON FIX ---
+# (Catches the files you moved out of the 'server' folder)
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/

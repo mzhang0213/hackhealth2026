@@ -1,7 +1,7 @@
 import type { UserProfile } from './user-store';
 import { supabase } from './supabase';
 
-export const API_BASE = 'https://rehab.mzhang.dev/api';
+export const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'https://rehab.mzhang.dev/api';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
